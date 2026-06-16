@@ -3,7 +3,7 @@ import { Database, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { Chart } from "./components/Chart";
 import { allValue, filterEvents, formatCurrency, formatNumber, getOptions, groupMetric, heatmap, summarize, timeseries, totalTokens } from "./lib/analytics";
-import { loadEvents, resetEvents, saveEvents } from "./lib/storage";
+import { loadEvents, loadLocalEvents, resetEvents, type EventDataSource } from "./lib/storage";
 import type { Filters, TokenEvent } from "./types";
 
 const initialFilters: Filters = {
@@ -21,11 +21,27 @@ const accent = "#0f766e";
 
 function App() {
   const [events, setEvents] = useState<TokenEvent[]>(() => loadEvents());
+  const [dataSource, setDataSource] = useState<EventDataSource>({ kind: "demo", label: "Demo fallback data" });
   const [filters, setFilters] = useState<Filters>(initialFilters);
 
   useEffect(() => {
-    saveEvents(events);
-  }, [events]);
+    let isActive = true;
+
+    loadLocalEvents()
+      .then((loaded) => {
+        if (!isActive || !loaded) return;
+        setEvents(loaded.events);
+        setDataSource(loaded.source);
+      })
+      .catch(() => {
+        if (!isActive) return;
+        setDataSource({ kind: "demo", label: "Demo fallback data" });
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => filterEvents(events, filters), [events, filters]);
   const summary = useMemo(() => summarize(filtered), [filtered]);
@@ -102,6 +118,11 @@ function App() {
   }
 
   function handleReset() {
+    if (dataSource.kind === "local") {
+      window.location.reload();
+      return;
+    }
+
     setEvents(resetEvents());
     setFilters(initialFilters);
   }
@@ -113,12 +134,16 @@ function App() {
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-accent">
               <Database size={16} />
-              <span>Local demo data</span>
+              <span>{dataSource.label}</span>
             </div>
             <h1 className="text-3xl font-semibold tracking-normal sm:text-4xl">Open Token</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted">
-              Token, cost, latency, and device analytics for local AI development workflows.
+              Token, estimated cost, runtime, and device analytics for local AI development workflows.
+              {dataSource.generatedAt ? ` Collected ${new Date(dataSource.generatedAt).toLocaleString()}.` : ""}
             </p>
+            {dataSource.scannedPaths?.length ? (
+              <p className="mt-1 max-w-3xl text-xs text-muted">Sources: {dataSource.scannedPaths.join(", ")}</p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -126,7 +151,7 @@ function App() {
             className="inline-flex h-10 w-fit items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-medium transition hover:border-accent hover:text-accent"
           >
             <RotateCcw size={16} />
-            Reset demo data
+            {dataSource.kind === "local" ? "Reload local data" : "Reset demo data"}
           </button>
         </header>
 
@@ -157,7 +182,7 @@ function App() {
             <div className="text-center">
               <Search className="mx-auto mb-3 text-muted" size={26} />
               <h2 className="text-lg font-semibold">No matching events</h2>
-              <p className="mt-1 text-sm text-muted">Adjust filters or reset the local demo data.</p>
+              <p className="mt-1 text-sm text-muted">Adjust filters or reload the local data.</p>
             </div>
           </section>
         ) : (
