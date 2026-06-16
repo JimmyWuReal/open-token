@@ -131,11 +131,16 @@ function elapsedSince(lastUserTimestamp, timestamp) {
   return elapsed > 0 && elapsed < 30 * 60 * 1000 ? elapsed : 0;
 }
 
+function firstString(...values) {
+  return values.find((value) => typeof value === "string" && value.trim())?.trim() ?? "";
+}
+
 async function parseCodexFile(file) {
   const text = await fs.readFile(file, "utf8");
   let sessionCwd = "";
   let sessionId = path.basename(file, ".jsonl");
   let lastUserTimestamp = "";
+  let currentModel = "";
   const events = [];
 
   for (const line of text.split("\n")) {
@@ -146,6 +151,16 @@ async function parseCodexFile(file) {
     if (record.type === "session_meta") {
       sessionCwd = record.payload?.cwd ?? sessionCwd;
       sessionId = record.payload?.id ?? sessionId;
+      currentModel = firstString(record.payload?.model, currentModel);
+    }
+
+    if (record.type === "turn_context") {
+      sessionCwd = record.payload?.cwd ?? sessionCwd;
+      currentModel = firstString(
+        record.payload?.model,
+        record.payload?.collaboration_mode?.settings?.model,
+        currentModel,
+      );
     }
 
     if (record.type === "response_item" && record.payload?.role === "user") {
@@ -169,7 +184,7 @@ async function parseCodexFile(file) {
         cwd: sessionCwd,
         tool: "Codex",
         provider: "OpenAI",
-        model: "Codex",
+        model: currentModel || "Codex",
         inputTokens: Math.max(0, totalInputTokens - cachedTokens),
         outputTokens,
         cachedTokens,
