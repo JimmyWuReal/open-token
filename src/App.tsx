@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Database, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
-import type { EChartsOption } from "echarts";
+import Database from "lucide-react/dist/esm/icons/database";
+import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw";
+import Search from "lucide-react/dist/esm/icons/search";
+import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal";
 import { Chart } from "./components/Chart";
 import { allValue, filterEvents, formatCurrency, formatNumber, getOptions, groupMetric, heatmap, summarize, timeseries, totalTokens } from "./lib/analytics";
 import { loadEvents, loadLocalEvents, resetEvents, type EventDataSource } from "./lib/storage";
@@ -56,7 +58,7 @@ function App() {
   const deviceGroups = useMemo(() => groupMetric(filtered, "deviceName", "cost"), [filtered]);
   const heatmapValues = useMemo(() => heatmap(filtered), [filtered]);
 
-  const timelineOption: EChartsOption = {
+  const timelineOption = {
     color: [accent, "#2563eb"],
     tooltip: { trigger: "axis" },
     legend: { top: 0, textStyle: { color: chartText } },
@@ -72,7 +74,7 @@ function App() {
     ],
   };
 
-  const providerOption: EChartsOption = {
+  const providerOption = {
     color: ["#0f766e", "#2563eb", "#b45309", "#7c3aed"],
     tooltip: { trigger: "item" },
     series: [
@@ -86,7 +88,7 @@ function App() {
     ],
   };
 
-  const modelOption: EChartsOption = {
+  const modelOption = {
     color: [accent],
     tooltip: { trigger: "axis" },
     grid: { left: 118, right: 20, top: 16, bottom: 24 },
@@ -95,7 +97,7 @@ function App() {
     series: [{ type: "bar", barWidth: 14, data: modelGroups.map(([, value]) => value).reverse() }],
   };
 
-  const deviceOption: EChartsOption = {
+  const deviceOption = {
     color: ["#2563eb"],
     tooltip: { trigger: "axis" },
     grid: { left: 42, right: 18, top: 18, bottom: 52 },
@@ -104,7 +106,7 @@ function App() {
     series: [{ type: "bar", barWidth: 24, data: deviceGroups.map(([, value]) => Number(value.toFixed(2))) }],
   };
 
-  const heatmapOption: EChartsOption = {
+  const heatmapOption = {
     tooltip: { position: "top" },
     grid: { left: 42, right: 20, top: 12, bottom: 34 },
     xAxis: { type: "category", data: Array.from({ length: 24 }, (_, hour) => `${hour}`), axisLabel: { color: chartText }, axisLine: { lineStyle: { color: chartGrid } } },

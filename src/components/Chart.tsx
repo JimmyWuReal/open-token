@@ -1,9 +1,8 @@
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts";
-import type { EChartsOption } from "echarts";
 
 type ChartProps = {
-  option: EChartsOption;
+  option: Record<string, unknown>;
   className?: string;
 };
 
