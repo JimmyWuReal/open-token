@@ -1,50 +1,58 @@
 # Open Token
 
-Local-first token and cost analytics for AI-heavy development workflows.
+Open Token is a local-first token analytics dashboard for AI development workflows. It scans local Codex and Claude Code session metadata, can import generic provider JSON or JSONL, and opens a localhost dashboard.
 
-The app is fully local. It can read generated data from your own computer and falls back to seeded demo data when no local data file exists. There is no Convex backend, auth, cloud sync, or database.
+It does not copy prompts, assistant messages, file contents, tool output, secrets, or raw logs. The generated dashboard data contains timestamps, providers, models, token counts, estimated cost, latency, tools, projects, and device names.
 
-## Real user flow
-
-1. Install dependencies:
+## Quick Start
 
 ```bash
 npm install
+npm start
 ```
 
-2. Collect local usage data:
+The CLI starts a small local static server at `http://127.0.0.1:5173`, opens the browser, and collects sanitized local metrics in the background. Startup is designed to stay under 10 seconds; local collection stops after a short budget and the dashboard still opens.
+
+## Use As A Package
+
+From this repository:
 
 ```bash
-npm run collect
+npm link
+open-token
 ```
 
-The collector scans local AI coding-tool session logs from:
+From npm after publishing:
+
+```bash
+npx open-token
+```
+
+Useful flags:
+
+```bash
+open-token --port 5180
+open-token --no-open
+open-token --no-collect
+open-token --collect-only
+open-token --import ./events.jsonl
+```
+
+Imported events may be JSON or JSONL. Supported fields include `provider`, `model`, `tool`, `project`, `timestamp`, `inputTokens`, `outputTokens`, `cachedTokens`, `reasoningTokens`, `latencyMs`, `costUsd`, and common OpenAI-style aliases such as `prompt_tokens` and `completion_tokens`.
+
+## Local Sources
+
+Open Token scans:
 
 - `~/.codex/sessions`
 - `~/.codex/archived_sessions`
 - `~/.claude/projects`
 
-It writes dashboard-ready metadata to `public/local-data/token-events.json`. That generated file is ignored by git. It includes timestamps, local project names, tool names, providers, models, token counts, estimated cost, and observed response time where available. It does not copy prompts, assistant messages, file contents, or tool output into the dashboard data file.
+Dashboard data is written to `~/.open-token/token-events.json`. Set `OPEN_TOKEN_HOME=/path/to/dir` to choose a different local data directory.
 
-3. Start the app:
+## Development
 
 ```bash
 npm run dev
-```
-
-4. Open the local Vite URL printed in the terminal.
-
-5. Use the dashboard:
-
-- Check the top-left data label. It should say `Local computer data`.
-- Filter by range, project, provider, model, device, or tool.
-- Review cost and token trends, provider share, model load, device comparison, hourly usage, and latest events.
-- After more Codex or Claude Code usage, run `npm run collect` again and press `Reload local data` in the app.
-
-If the label says `Demo fallback data`, run `npm run collect` first, then reload the browser.
-
-## Build
-
-```bash
 npm run build
 ```

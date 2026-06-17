@@ -1,28 +1,31 @@
-export type TokenEventStatus = "success" | "error";
-
 export type TokenEvent = {
   id: string;
   timestamp: string;
-  deviceName: string;
-  project: string;
-  tool: string;
   provider: string;
   model: string;
+  tool: string;
+  project: string;
+  deviceName: string;
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
   reasoningTokens: number;
-  costUsd: number;
   latencyMs: number;
   requestCount: number;
-  status: TokenEventStatus;
+  status: "success" | "error";
+  costUsd: number;
+};
+
+export type DataPayload = {
+  generatedAt: string;
+  scannedPaths: string[];
+  totalEvents: number;
+  events: TokenEvent[];
 };
 
 export type Filters = {
-  range: "7d" | "14d" | "30d" | "all";
-  project: string;
+  range: "24h" | "7d" | "30d" | "all";
   provider: string;
   model: string;
-  deviceName: string;
   tool: string;
 };
