@@ -11,6 +11,16 @@ export type EventDataSource = {
   scannedPaths?: string[];
 };
 
+export type LocalLoadStage = "requesting" | "downloading" | "parsing" | "validating" | "ready" | "fallback" | "error";
+
+export type LocalLoadProgress = {
+  stage: LocalLoadStage;
+  loadedBytes?: number;
+  totalBytes?: number;
+  eventCount?: number;
+  message: string;
+};
+
 type LocalDataPayload = {
   generatedAt?: string;
   scannedPaths?: string[];
@@ -58,16 +68,66 @@ export function resetEvents() {
   return demoEvents;
 }
 
-export async function loadLocalEvents(): Promise<{ events: TokenEvent[]; source: EventDataSource } | null> {
+async function readResponseText(response: Response, onProgress?: (progress: LocalLoadProgress) => void) {
+  const totalBytes = Number(response.headers.get("content-length")) || undefined;
+
+  if (!response.body) {
+    onProgress?.({ stage: "downloading", totalBytes, message: "Downloading local data" });
+    return response.text();
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loadedBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loadedBytes += value.byteLength;
+    onProgress?.({
+      stage: "downloading",
+      loadedBytes,
+      totalBytes,
+      message: totalBytes ? `Downloading local data (${Math.round((loadedBytes / totalBytes) * 100)}%)` : "Downloading local data",
+    });
+  }
+
+  const body = new Uint8Array(loadedBytes);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  });
+
+  return new TextDecoder().decode(body);
+}
+
+export async function loadLocalEvents(onProgress?: (progress: LocalLoadProgress) => void): Promise<{ events: TokenEvent[]; source: EventDataSource } | null> {
+  onProgress?.({ stage: "requesting", message: "Requesting local data" });
   const response = await fetch(`${localDataPath}?v=${Date.now()}`, { cache: "no-store" });
-  if (!response.ok) return null;
+  if (!response.ok) {
+    onProgress?.({ stage: "fallback", message: `Local data unavailable (${response.status})` });
+    return null;
+  }
 
-  const payload = (await response.json()) as LocalDataPayload | TokenEvent[];
+  const text = await readResponseText(response, onProgress);
+  onProgress?.({ stage: "parsing", loadedBytes: text.length, message: "Parsing local data" });
+  const payload = JSON.parse(text) as LocalDataPayload | TokenEvent[];
   const events = Array.isArray(payload) ? payload : payload.events;
-  if (!Array.isArray(events)) return null;
+  if (!Array.isArray(events)) {
+    onProgress?.({ stage: "fallback", message: "Local data did not contain events" });
+    return null;
+  }
 
+  onProgress?.({ stage: "validating", eventCount: events.length, message: `Validating ${events.length.toLocaleString()} events` });
   const validEvents = events.filter(isTokenEvent);
-  if (validEvents.length === 0) return null;
+  if (validEvents.length === 0) {
+    onProgress?.({ stage: "fallback", message: "Local data contained no valid events" });
+    return null;
+  }
+
+  onProgress?.({ stage: "ready", eventCount: validEvents.length, message: `Loaded ${validEvents.length.toLocaleString()} local events` });
 
   return {
     events: validEvents,

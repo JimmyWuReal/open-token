@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import Database from "lucide-react/dist/esm/icons/database";
-import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw";
-import Search from "lucide-react/dist/esm/icons/search";
-import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal";
 import { Chart } from "./components/Chart";
 import { allValue, filterEvents, formatCurrency, formatNumber, getOptions, groupMetric, heatmap, summarize, timeseries, totalTokens } from "./lib/analytics";
-import { loadEvents, loadLocalEvents, resetEvents, type EventDataSource } from "./lib/storage";
+import { loadEvents, loadLocalEvents, resetEvents, type EventDataSource, type LocalLoadProgress } from "./lib/storage";
 import type { Filters, TokenEvent } from "./types";
 
 const initialFilters: Filters = {
@@ -24,20 +20,28 @@ const accent = "#0f766e";
 function App() {
   const [events, setEvents] = useState<TokenEvent[]>(() => loadEvents());
   const [dataSource, setDataSource] = useState<EventDataSource>({ kind: "demo", label: "Demo fallback data" });
+  const [loadProgress, setLoadProgress] = useState<LocalLoadProgress>({ stage: "requesting", message: "Preparing local data" });
   const [filters, setFilters] = useState<Filters>(initialFilters);
 
   useEffect(() => {
     let isActive = true;
 
-    loadLocalEvents()
+    loadLocalEvents((progress) => {
+      if (isActive) setLoadProgress(progress);
+    })
       .then((loaded) => {
-        if (!isActive || !loaded) return;
+        if (!isActive) return;
+        if (!loaded) {
+          setLoadProgress({ stage: "fallback", message: "Using demo fallback data" });
+          return;
+        }
         setEvents(loaded.events);
         setDataSource(loaded.source);
       })
       .catch(() => {
         if (!isActive) return;
         setDataSource({ kind: "demo", label: "Demo fallback data" });
+        setLoadProgress({ stage: "error", message: "Local data load failed; using demo data" });
       });
 
     return () => {
@@ -57,6 +61,16 @@ function App() {
   const modelGroups = useMemo(() => groupMetric(filtered, "model", "tokens").slice(0, 8), [filtered]);
   const deviceGroups = useMemo(() => groupMetric(filtered, "deviceName", "cost"), [filtered]);
   const heatmapValues = useMemo(() => heatmap(filtered), [filtered]);
+  const isLoadingLocalData = dataSource.kind !== "local" && !["ready", "fallback", "error"].includes(loadProgress.stage);
+  const progressPercent = loadProgress.totalBytes && loadProgress.loadedBytes
+    ? Math.min(100, Math.round((loadProgress.loadedBytes / loadProgress.totalBytes) * 100))
+    : loadProgress.stage === "parsing"
+      ? 88
+      : loadProgress.stage === "validating"
+        ? 94
+        : loadProgress.stage === "ready"
+          ? 100
+          : 18;
 
   const timelineOption = {
     color: [accent, "#2563eb"],
@@ -135,7 +149,7 @@ function App() {
         <header className="flex flex-col gap-4 border-b border-line pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-accent">
-              <Database size={16} />
+              <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
               <span>{dataSource.label}</span>
             </div>
             <h1 className="text-3xl font-semibold tracking-normal sm:text-4xl">Open Token</h1>
@@ -152,10 +166,28 @@ function App() {
             onClick={handleReset}
             className="inline-flex h-10 w-fit items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-medium transition hover:border-accent hover:text-accent"
           >
-            <RotateCcw size={16} />
             {dataSource.kind === "local" ? "Reload local data" : "Reset demo data"}
           </button>
         </header>
+
+        <section className="border border-line bg-white px-4 py-3 shadow-[0_1px_0_rgba(17,24,39,0.04)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted">Local data state</p>
+              <p className="mt-1 text-sm font-medium">{loadProgress.message}</p>
+            </div>
+            <div className="text-left text-xs text-muted sm:text-right">
+              <p>{dataSource.kind === "local" ? `${formatNumber(events.length)} events active` : "Demo data shown while local data loads"}</p>
+              <p>{loadProgress.loadedBytes ? formatBytes(loadProgress.loadedBytes, loadProgress.totalBytes) : loadProgress.stage}</p>
+            </div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef2f7]" aria-label="Local data loading progress" aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100} role="progressbar">
+            <div
+              className={`h-full rounded-full bg-accent transition-all duration-300 ${isLoadingLocalData ? "animate-pulse" : ""}`}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </section>
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric label="Total cost" value={formatCurrency(summary.cost)} detail={`${formatNumber(filtered.length)} events`} />
@@ -166,7 +198,6 @@ function App() {
 
         <section className="flex flex-col gap-3 border-y border-line py-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <SlidersHorizontal size={16} />
             Filters
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
@@ -182,7 +213,7 @@ function App() {
         {filtered.length === 0 ? (
           <section className="flex min-h-[360px] items-center justify-center border border-dashed border-line bg-white">
             <div className="text-center">
-              <Search className="mx-auto mb-3 text-muted" size={26} />
+              <div className="mx-auto mb-3 h-8 w-8 rounded-full border border-line" aria-hidden="true" />
               <h2 className="text-lg font-semibold">No matching events</h2>
               <p className="mt-1 text-sm text-muted">Adjust filters or reload the local data.</p>
             </div>
@@ -253,6 +284,12 @@ function App() {
       </div>
     </main>
   );
+}
+
+function formatBytes(loadedBytes: number, totalBytes?: number) {
+  const loaded = `${(loadedBytes / 1024 / 1024).toFixed(1)} MB`;
+  if (!totalBytes) return loaded;
+  return `${loaded} of ${(totalBytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
