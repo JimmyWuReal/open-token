@@ -7,32 +7,59 @@ const providers = [
   ["Mistral", "codestral-latest", "Custom SDK"]
 ] as const;
 
+// Deterministic pseudo-random in [0, 1) so the demo heatmap looks varied but stable.
+function noise(seed: number) {
+  const value = Math.sin(seed * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
 export function demoPayload(): DataPayload {
-  const now = Date.now();
-  const events: TokenEvent[] = Array.from({ length: 96 }, (_, index) => {
-    const [provider, model, tool] = providers[index % providers.length];
-    const inputTokens = 900 + ((index * 317) % 6200);
-    const outputTokens = 300 + ((index * 191) % 2800);
-    const cachedTokens = index % 3 === 0 ? 1200 + index * 8 : 0;
-    const reasoningTokens = provider === "OpenAI" || provider === "Anthropic" ? 200 + ((index * 47) % 1600) : 0;
-    return {
-      id: `demo_${index}`,
-      timestamp: new Date(now - index * 5 * 60 * 60 * 1000).toISOString(),
-      provider,
-      model,
-      tool,
-      project: ["open-token", "checkout-agent", "docs-index"][index % 3],
-      deviceName: ["MacBook Pro", "Studio", "CI Runner"][index % 3],
-      inputTokens,
-      outputTokens,
-      cachedTokens,
-      reasoningTokens,
-      latencyMs: 900 + ((index * 73) % 6200),
-      requestCount: 1,
-      status: index % 19 === 0 ? "error" : "success",
-      costUsd: Number(((inputTokens * 1.2 + outputTokens * 8 + cachedTokens * 0.1 + reasoningTokens * 6) / 1_000_000).toFixed(6))
-    };
-  });
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const events: TokenEvent[] = [];
+  let index = 0;
+
+  // One year of activity, with gaps and ramps so streaks and the heatmap read naturally.
+  for (let dayOffset = 364; dayOffset >= 0; dayOffset--) {
+    // Skip roughly a fifth of days to create breaks between streaks.
+    if (noise(dayOffset + 7) < 0.2) continue;
+
+    // Heavier usage on recent days and a gentle weekly rhythm.
+    const recency = 0.4 + 0.6 * (1 - dayOffset / 364);
+    const weekday = new Date(todayUtc - dayOffset * 86_400_000).getUTCDay();
+    const weekendDip = weekday === 0 || weekday === 6 ? 0.45 : 1;
+    const intensity = recency * weekendDip * (0.5 + noise(dayOffset * 3.3));
+    const eventsToday = 1 + Math.floor(noise(dayOffset * 1.7) * 4 * recency);
+
+    for (let e = 0; e < eventsToday; e++) {
+      const [provider, model, tool] = providers[index % providers.length];
+      const scale = 1 + intensity * 3;
+      const inputTokens = Math.round((900 + ((index * 317) % 6200)) * scale);
+      const outputTokens = Math.round((300 + ((index * 191) % 2800)) * scale);
+      const cachedTokens = index % 3 === 0 ? Math.round((1200 + index * 8) * scale) : 0;
+      const reasoningTokens = provider === "OpenAI" || provider === "Anthropic" ? Math.round((200 + ((index * 47) % 1600)) * scale) : 0;
+      const timestamp = new Date(todayUtc - dayOffset * 86_400_000 + (9 + e) * 3_600_000).toISOString();
+      events.push({
+        id: `demo_${index}`,
+        timestamp,
+        provider,
+        model,
+        tool,
+        project: ["open-token", "checkout-agent", "docs-index"][index % 3],
+        deviceName: ["MacBook Pro", "Studio", "CI Runner"][index % 3],
+        inputTokens,
+        outputTokens,
+        cachedTokens,
+        reasoningTokens,
+        latencyMs: 900 + ((index * 73) % 6200),
+        requestCount: 1,
+        status: index % 19 === 0 ? "error" : "success",
+        costUsd: Number(((inputTokens * 1.2 + outputTokens * 8 + cachedTokens * 0.1 + reasoningTokens * 6) / 1_000_000).toFixed(6))
+      });
+      index += 1;
+    }
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     scannedPaths: [],

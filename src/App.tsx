@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { all, filterEvents, formatCurrency, formatNumber, group, options, summarize, timeline, tokens } from "./analytics";
+import { dailyTotals, formatCurrency, formatNumber, lastDays, lifetime, longestStreak } from "./analytics";
+import type { DayTotal } from "./analytics";
 import { loadCollectionStatus, loadPayload, requestCollectionRefresh } from "./data";
-import type { CollectionStatus, DataPayload, Filters, TokenEvent } from "./types";
+import type { CollectionStatus, DataPayload } from "./types";
 
-const initialFilters: Filters = { range: "7d", provider: all, model: all, tool: all };
+const TABS = ["Overview", "Sessions", "Models", "Settings"] as const;
+type Tab = (typeof TABS)[number];
+type HeatMode = "tokens" | "cost";
+
+type TipState = { x: number; y: number; title: string; detail: string } | null;
 
 export default function App() {
   const [payload, setPayload] = useState<DataPayload | null>(null);
@@ -12,7 +17,8 @@ export default function App() {
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null);
   const [autoReload, setAutoReload] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
-  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [tab, setTab] = useState<Tab>("Overview");
+  const [tip, setTip] = useState<TipState>(null);
   const lastLoadedGeneratedAt = useRef("");
 
   const refreshPayload = useCallback(async () => {
@@ -67,22 +73,27 @@ export default function App() {
   }, [refreshPayload]);
 
   const events = payload?.events ?? [];
-  const filtered = useMemo(() => filterEvents(events, filters), [events, filters]);
-  const summary = useMemo(() => summarize(filtered), [filtered]);
-  const providerRows = useMemo(() => group(filtered, "provider", "cost"), [filtered]);
-  const modelRows = useMemo(() => group(filtered, "model", "tokens").slice(0, 8), [filtered]);
-  const series = useMemo(() => timeline(filtered), [filtered]);
-  const recent = useMemo(() => [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 10), [filtered]);
+  const totals = useMemo(() => dailyTotals(events), [events]);
+  const totalsLifetime = useMemo(() => lifetime(events), [events]);
+  const streak = useMemo(() => longestStreak(totals), [totals]);
+  const year = useMemo(() => lastDays(totals, 365), [totals]);
+  const month = useMemo(() => lastDays(totals, 30), [totals]);
+
+  const showTip = useCallback((event: { clientX: number; clientY: number }, title: string, detail: string) => {
+    setTip({ x: event.clientX, y: event.clientY, title, detail });
+  }, []);
+  const hideTip = useCallback(() => setTip(null), []);
 
   return (
     <main className="shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">{isLocal ? "Local computer data" : "Demo data"} {payload?.generatedAt ? `updated ${new Date(payload.generatedAt).toLocaleTimeString()}` : ""}</p>
-          <h1>Open Token</h1>
-          <p className="subhead">Fast token, cost, latency, provider, and model analytics from local AI development sessions.</p>
+      <header className="profile">
+        <div className="avatar" aria-hidden="true">JW</div>
+        <div className="profile-id">
+          <p className="eyebrow">{isLocal ? "Local computer data" : "Demo data"}{payload?.generatedAt ? ` · updated ${new Date(payload.generatedAt).toLocaleTimeString()}` : ""}</p>
+          <h1>Jordan Walters</h1>
+          <p className="subhead">Token, cost, and streak analytics across your AI development sessions.</p>
         </div>
-        <div className="topbar-actions">
+        <div className="profile-actions">
           <label className="toggle-control">
             <input type="checkbox" checked={autoReload} onChange={(event) => setAutoReload(event.target.checked)} />
             <span>Auto reload 60s</span>
@@ -91,51 +102,222 @@ export default function App() {
         </div>
       </header>
 
+      <nav className="tabs" aria-label="Sections">
+        {TABS.map((name) => (
+          <button
+            key={name}
+            type="button"
+            className={tab === name ? "tab active" : "tab"}
+            aria-current={tab === name ? "page" : undefined}
+            onClick={() => setTab(name)}
+          >
+            {name}
+          </button>
+        ))}
+      </nav>
+
       <CollectionProgress status={collectionStatus} local={isLocal} />
 
-      <section className="metrics" aria-label="Token analytics summary">
-        <Metric label="Cost" value={formatCurrency(summary.cost)} detail={`${formatNumber(filtered.length)} events`} />
-        <Metric label="Tokens" value={formatNumber(summary.tokens)} detail={`${formatNumber(summary.requests)} requests`} />
-        <Metric label="Latency" value={`${formatNumber(summary.latency)} ms`} detail="Average response" />
-        <Metric label="Success" value={`${summary.successRate}%`} detail="Filtered events" />
-      </section>
+      {tab === "Overview" ? (
+        <Overview
+          lifetimeTokens={totalsLifetime.tokens}
+          lifetimeCost={totalsLifetime.cost}
+          streak={streak}
+          year={year}
+          month={month}
+          showTip={showTip}
+          hideTip={hideTip}
+        />
+      ) : (
+        <Placeholder name={tab} />
+      )}
 
-      <section className="filters" aria-label="Filters">
-        <Select label="Range" value={filters.range} options={["24h", "7d", "30d", "all"]} onChange={(range) => setFilters({ ...filters, range: range as Filters["range"] })} />
-        <Select label="Provider" value={filters.provider} options={options(events, "provider")} onChange={(provider) => setFilters({ ...filters, provider })} />
-        <Select label="Model" value={filters.model} options={options(events, "model")} onChange={(model) => setFilters({ ...filters, model })} />
-        <Select label="Tool" value={filters.tool} options={options(events, "tool")} onChange={(tool) => setFilters({ ...filters, tool })} />
-      </section>
-
-      <section className="grid">
-        <Panel title="Token timeline" wide>
-          <Timeline rows={series} />
-        </Panel>
-        <Panel title="Provider spend">
-          <Bars rows={providerRows} format={formatCurrency} />
-        </Panel>
-        <Panel title="Top models" wide>
-          <Bars rows={modelRows} format={formatNumber} />
-        </Panel>
-        <Panel title="Sources">
-          <div className="source-list">
-            <b>{formatNumber(payload?.totalEvents ?? 0)}</b>
-            <span>events collected</span>
-            {(payload?.scannedPaths.length ? payload.scannedPaths : ["Run `open-token` to scan Codex, Claude Code, or imported JSON metrics."]).map((source) => <code key={source}>{source}</code>)}
-          </div>
-        </Panel>
-      </section>
-
-      <section className="events">
-        <div className="section-heading">
-          <h2>Recent events</h2>
-          <span>{isLocal ? "Sanitized metadata only" : "Seeded sample"}</span>
+      {tip ? (
+        <div className="tooltip" style={{ left: tip.x, top: tip.y }} role="status">
+          <strong>{tip.title}</strong>
+          <span>{tip.detail}</span>
         </div>
-        <div className="table" role="table">
-          {recent.map((event) => <EventRow key={event.id} event={event} />)}
-        </div>
-      </section>
+      ) : null}
     </main>
+  );
+}
+
+function Overview({
+  lifetimeTokens,
+  lifetimeCost,
+  streak,
+  year,
+  month,
+  showTip,
+  hideTip
+}: {
+  lifetimeTokens: number;
+  lifetimeCost: number;
+  streak: number;
+  year: DayTotal[];
+  month: DayTotal[];
+  showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void;
+  hideTip: () => void;
+}) {
+  const [heatMode, setHeatMode] = useState<HeatMode>("tokens");
+
+  return (
+    <>
+      <section className="stats" aria-label="Lifetime totals">
+        <Stat label="Lifetime tokens" value={formatNumber(lifetimeTokens)} detail="All recorded sessions" />
+        <Stat label="Lifetime cost" value={formatCurrency(lifetimeCost)} detail="Estimated spend" />
+        <Stat label="Longest streak" value={`${formatNumber(streak)} ${streak === 1 ? "day" : "days"}`} detail="Consecutive active days" />
+      </section>
+
+      <section className="card heatmap-card" aria-label="Daily activity">
+        <div className="card-head">
+          <h2>Activity · last 365 days</h2>
+          <div className="segmented" role="group" aria-label="Heatmap metric">
+            <button type="button" className={heatMode === "tokens" ? "seg active" : "seg"} onClick={() => setHeatMode("tokens")}>Tokens</button>
+            <button type="button" className={heatMode === "cost" ? "seg active" : "seg"} onClick={() => setHeatMode("cost")}>Cost</button>
+          </div>
+        </div>
+        <Heatmap days={year} mode={heatMode} showTip={showTip} hideTip={hideTip} />
+      </section>
+
+      <section className="card" aria-label="Tokens over the last 30 days">
+        <div className="card-head">
+          <h2>Tokens · last 30 days</h2>
+        </div>
+        <DailyChart days={month} showTip={showTip} hideTip={hideTip} />
+      </section>
+    </>
+  );
+}
+
+function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
+
+function fmtDay(date: string) {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+function heatLevel(value: number, max: number) {
+  if (value <= 0 || max <= 0) return 0;
+  const ratio = value / max;
+  if (ratio > 0.66) return 4;
+  if (ratio > 0.4) return 3;
+  if (ratio > 0.15) return 2;
+  return 1;
+}
+
+function Heatmap({ days, mode, showTip, hideTip }: { days: DayTotal[]; mode: HeatMode; showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void; hideTip: () => void }) {
+  const max = useMemo(() => Math.max(0, ...days.map((day) => (mode === "tokens" ? day.tokens : day.cost))), [days, mode]);
+
+  const weeks = useMemo(() => {
+    const offset = days.length ? new Date(`${days[0].date}T00:00:00Z`).getUTCDay() : 0;
+    const cells: Array<DayTotal | null> = [...Array<null>(offset).fill(null), ...days];
+    const columns: Array<Array<DayTotal | null>> = [];
+    for (let i = 0; i < cells.length; i += 7) columns.push(cells.slice(i, i + 7));
+    return columns;
+  }, [days]);
+
+  let lastMonth = -1;
+
+  return (
+    <div className="heatmap-scroll">
+      <div className="heatmap-grid">
+        <div className="heatmap-months">
+          <span className="heatmap-gutter" />
+          {weeks.map((week, index) => {
+            const firstDay = week.find(Boolean) as DayTotal | undefined;
+            const monthIndex = firstDay ? new Date(`${firstDay.date}T00:00:00Z`).getUTCMonth() : -1;
+            const show = monthIndex !== -1 && monthIndex !== lastMonth;
+            if (show) lastMonth = monthIndex;
+            return <span key={index}>{show ? MONTHS[monthIndex] : ""}</span>;
+          })}
+        </div>
+        <div className="heatmap-body">
+          <div className="heatmap-weekdays">
+            {WEEKDAY_LABELS.map((label, index) => <span key={index}>{label}</span>)}
+          </div>
+          {weeks.map((week, index) => (
+            <div className="heatmap-col" key={index}>
+              {Array.from({ length: 7 }, (_, row) => {
+                const day = week[row];
+                if (!day) return <span className="cell empty" key={row} />;
+                const value = mode === "tokens" ? day.tokens : day.cost;
+                const detail = value > 0
+                  ? `${mode === "tokens" ? formatNumber(day.tokens) + " tokens" : formatCurrency(day.cost)}`
+                  : "No activity";
+                return (
+                  <span
+                    key={row}
+                    className={`cell l${heatLevel(value, max)}`}
+                    onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
+                    onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
+                    onMouseLeave={hideTip}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="heatmap-legend">
+        <span>Less</span>
+        <i className="cell l0" />
+        <i className="cell l1" />
+        <i className="cell l2" />
+        <i className="cell l3" />
+        <i className="cell l4" />
+        <span>More</span>
+      </div>
+    </div>
+  );
+}
+
+function DailyChart({ days, showTip, hideTip }: { days: DayTotal[]; showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void; hideTip: () => void }) {
+  const max = useMemo(() => Math.max(1, ...days.map((day) => day.tokens)), [days]);
+
+  return (
+    <div className="bar-chart">
+      <div className="bars-row">
+        {days.map((day) => {
+          const height = day.tokens > 0 ? Math.max(2, (day.tokens / max) * 100) : 0;
+          const detail = day.tokens > 0 ? `${formatNumber(day.tokens)} tokens` : "No activity";
+          return (
+            <div
+              className="bar-col"
+              key={day.date}
+              onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
+              onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
+              onMouseLeave={hideTip}
+            >
+              <div className="bar-fill" style={{ height: `${height}%` }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="bar-axis">
+        <span>{days.length ? fmtDay(days[0].date) : ""}</span>
+        <span>{days.length ? fmtDay(days[days.length - 1].date) : ""}</span>
+      </div>
+    </div>
+  );
+}
+
+function Placeholder({ name }: { name: string }) {
+  return (
+    <section className="card placeholder">
+      <h2>{name}</h2>
+      <p>This section is a placeholder. Content coming soon.</p>
+    </section>
   );
 }
 
@@ -167,31 +349,4 @@ function CollectionProgress({ status, local }: { status: CollectionStatus | null
       </div>
     </section>
   );
-}
-
-function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
-}
-
-function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
-  return <label><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select></label>;
-}
-
-function Panel({ title, wide, children }: { title: string; wide?: boolean; children: ReactNode }) {
-  return <section className={wide ? "panel wide" : "panel"}><h2>{title}</h2>{children}</section>;
-}
-
-function Timeline({ rows }: { rows: Array<[string, { tokens: number; cost: number }]> }) {
-  const max = Math.max(1, ...rows.map(([, value]) => value.tokens));
-  const points = rows.map(([, value], index) => `${(index / Math.max(1, rows.length - 1)) * 100},${100 - (value.tokens / max) * 88}`).join(" ");
-  return <div className="chart"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={points} /></svg><div className="axis">{rows.map(([day]) => <span key={day}>{day.slice(5)}</span>)}</div></div>;
-}
-
-function Bars({ rows, format }: { rows: Array<[string, number]>; format: (value: number) => string }) {
-  const max = Math.max(1, ...rows.map(([, value]) => value));
-  return <div className="bars">{rows.map(([name, value]) => <div className="bar-row" key={name}><span>{name}</span><div><i style={{ width: `${Math.max(4, (value / max) * 100)}%` }} /></div><b>{format(value)}</b></div>)}</div>;
-}
-
-function EventRow({ event }: { event: TokenEvent }) {
-  return <div className="event-row" role="row"><span>{new Date(event.timestamp).toLocaleString()}</span><b>{event.provider}</b><span>{event.model}</span><span>{formatNumber(tokens(event))} tok</span><span>{formatCurrency(event.costUsd)}</span></div>;
 }

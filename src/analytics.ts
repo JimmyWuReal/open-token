@@ -65,3 +65,64 @@ export function timeline(events: TokenEvent[]) {
   }
   return Array.from(days.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
+
+export type DayTotal = { date: string; tokens: number; cost: number };
+
+/** Sum tokens and cost per calendar day (UTC), keyed `YYYY-MM-DD`. */
+export function dailyTotals(events: TokenEvent[]) {
+  const days = new Map<string, { tokens: number; cost: number }>();
+  for (const event of events) {
+    const day = event.timestamp.slice(0, 10);
+    const current = days.get(day) || { tokens: 0, cost: 0 };
+    current.tokens += tokens(event);
+    current.cost += event.costUsd;
+    days.set(day, current);
+  }
+  return days;
+}
+
+function dayKey(utcMs: number) {
+  return new Date(utcMs).toISOString().slice(0, 10);
+}
+
+/** Build the last `count` calendar days ending today, filling gaps with zeros. */
+export function lastDays(totals: Map<string, { tokens: number; cost: number }>, count: number): DayTotal[] {
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const out: DayTotal[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const date = dayKey(todayUtc - i * 86_400_000);
+    const value = totals.get(date) || { tokens: 0, cost: 0 };
+    out.push({ date, tokens: value.tokens, cost: value.cost });
+  }
+  return out;
+}
+
+export function lifetime(events: TokenEvent[]) {
+  return events.reduce(
+    (acc, event) => {
+      acc.tokens += tokens(event);
+      acc.cost += event.costUsd;
+      return acc;
+    },
+    { tokens: 0, cost: 0 }
+  );
+}
+
+/** Longest run of consecutive calendar days that recorded any tokens. */
+export function longestStreak(totals: Map<string, { tokens: number; cost: number }>) {
+  const active = Array.from(totals.entries())
+    .filter(([, value]) => value.tokens > 0)
+    .map(([day]) => day)
+    .sort();
+  let best = 0;
+  let current = 0;
+  let previous = 0;
+  for (const day of active) {
+    const ms = Date.parse(day);
+    current = previous && ms - previous === 86_400_000 ? current + 1 : 1;
+    previous = ms;
+    best = Math.max(best, current);
+  }
+  return best;
+}
