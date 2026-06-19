@@ -1,4 +1,4 @@
-import type { DataPayload, TokenEvent } from "./types";
+import type { CollectionStatus, DataPayload, TokenEvent } from "./types";
 
 const providers = [
   ["OpenAI", "gpt-4.1", "Codex"],
@@ -50,5 +50,16 @@ export async function loadPayload(): Promise<{ payload: DataPayload; local: bool
     return { payload, local: true };
   } catch {
     return { payload: demoPayload(), local: false };
+  }
+}
+
+export async function loadCollectionStatus(): Promise<CollectionStatus | null> {
+  try {
+    const response = await fetch(`/local-data/status.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const status = await response.json() as CollectionStatus;
+    return status && typeof status.state === "string" ? status : null;
+  } catch {
+    return null;
   }
 }

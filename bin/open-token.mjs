@@ -12,8 +12,6 @@ const home = os.homedir();
 const dataDir = process.env.OPEN_TOKEN_HOME || path.join(home, ".open-token");
 const outFile = path.join(dataDir, "token-events.json");
 const deviceName = os.hostname() || os.platform();
-const maxFilesPerRoot = 800;
-const collectDeadlineMs = 6500;
 
 const args = new Set(process.argv.slice(2));
 const argList = process.argv.slice(2);
@@ -46,6 +44,31 @@ function firstString(...values) {
 function projectFromCwd(cwd) {
   if (!cwd || typeof cwd !== "string") return "Unknown";
   return path.basename(cwd) || cwd.replace(home, "~") || "Unknown";
+}
+
+const collectionStatus = {
+  state: "idle",
+  progress: 0,
+  message: "Waiting to collect local metadata.",
+  rootsTotal: 0,
+  rootsScanned: 0,
+  filesDiscovered: 0,
+  filesParsed: 0,
+  eventsCollected: 0,
+  scannedPaths: [],
+  generatedAt: "",
+  startedAt: "",
+  updatedAt: new Date().toISOString(),
+  finishedAt: "",
+  error: ""
+};
+
+function updateStatus(patch) {
+  Object.assign(collectionStatus, patch, { updatedAt: new Date().toISOString() });
+}
+
+function statusJson() {
+  return JSON.stringify(collectionStatus, null, 2);
 }
 
 function costUsd(event) {
@@ -88,11 +111,10 @@ async function exists(filePath) {
   }
 }
 
-async function walkJsonl(rootDir, startedAt) {
-  if (!(await exists(rootDir)) || Date.now() - startedAt > collectDeadlineMs) return [];
+async function walkJsonl(rootDir, onFound) {
+  if (!(await exists(rootDir))) return [];
   const found = [];
   async function visit(current) {
-    if (found.length >= maxFilesPerRoot || Date.now() - startedAt > collectDeadlineMs) return;
     let entries = [];
     try {
       entries = await fs.readdir(current, { withFileTypes: true });
@@ -102,8 +124,10 @@ async function walkJsonl(rootDir, startedAt) {
     for (const entry of entries) {
       const entryPath = path.join(current, entry.name);
       if (entry.isDirectory()) await visit(entryPath);
-      if (entry.isFile() && entry.name.endsWith(".jsonl")) found.push(entryPath);
-      if (found.length >= maxFilesPerRoot) break;
+      if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        found.push(entryPath);
+        onFound?.(found.length);
+      }
     }
   }
   await visit(rootDir);
@@ -114,7 +138,7 @@ async function walkJsonl(rootDir, startedAt) {
       return null;
     }
   }));
-  return stats.filter(Boolean).sort((a, b) => b.mtime - a.mtime).slice(0, maxFilesPerRoot).map((entry) => entry.file);
+  return stats.filter(Boolean).sort((a, b) => b.mtime - a.mtime).map((entry) => entry.file);
 }
 
 function safeJson(line) {
@@ -206,37 +230,90 @@ async function importEvents(file) {
 }
 
 async function collect() {
-  const startedAt = Date.now();
   const sources = [
     { tool: "Codex", roots: [path.join(home, ".codex", "sessions"), path.join(home, ".codex", "archived_sessions")], parse: parseCodex },
     { tool: "Claude Code", roots: [path.join(home, ".claude", "projects")], parse: parseClaude }
   ];
+  const rootsTotal = sources.reduce((count, source) => count + source.roots.length, 0);
   const events = [];
   const scannedPaths = [];
+  const filesBySource = [];
+  updateStatus({
+    state: "running",
+    progress: 1,
+    message: "Scanning local session metadata.",
+    rootsTotal,
+    rootsScanned: 0,
+    filesDiscovered: 0,
+    filesParsed: 0,
+    eventsCollected: 0,
+    scannedPaths: [],
+    generatedAt: "",
+    startedAt: new Date().toISOString(),
+    finishedAt: "",
+    error: ""
+  });
+
   for (const source of sources) {
     for (const sourceRoot of source.roots) {
-      const files = await walkJsonl(sourceRoot, startedAt);
+      updateStatus({ message: `Scanning ${source.tool} metadata.`, currentSource: source.tool });
+      const files = await walkJsonl(sourceRoot, () => {
+        updateStatus({ filesDiscovered: collectionStatus.filesDiscovered + 1 });
+      });
       if (files.length) scannedPaths.push(sourceRoot.replace(home, "~"));
       for (const file of files) {
-        if (Date.now() - startedAt > collectDeadlineMs) break;
-        try {
-          events.push(...await source.parse(file));
-        } catch {
-          // Ignore malformed or permission-blocked local session files.
-        }
+        filesBySource.push({ source, file });
       }
+      const rootsScanned = collectionStatus.rootsScanned + 1;
+      updateStatus({
+        rootsScanned,
+        scannedPaths: [...scannedPaths],
+        progress: Math.min(30, Math.round((rootsScanned / Math.max(1, rootsTotal)) * 30))
+      });
     }
   }
+
+  const filesTotal = filesBySource.length;
+  for (const [index, item] of filesBySource.entries()) {
+    updateStatus({
+      message: `Parsing ${item.source.tool} metadata ${index + 1} of ${filesTotal}.`,
+      currentSource: item.source.tool,
+      progress: filesTotal ? 30 + Math.round((index / filesTotal) * 60) : 90
+    });
+    try {
+      events.push(...await item.source.parse(item.file));
+    } catch {
+      // Ignore malformed or permission-blocked local session files.
+    }
+    updateStatus({
+      filesParsed: collectionStatus.filesParsed + 1,
+      eventsCollected: events.length
+    });
+  }
+
   if (importFile) events.push(...await importEvents(importFile));
+  updateStatus({ progress: 94, message: "Preparing dashboard data.", eventsCollected: events.length });
   events.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const payload = {
     generatedAt: new Date().toISOString(),
     scannedPaths,
     totalEvents: events.length,
-    events: events.slice(0, 5000)
+    events
   };
   await fs.mkdir(path.dirname(outFile), { recursive: true });
-  await fs.writeFile(outFile, JSON.stringify(payload, null, 2));
+  const tempFile = `${outFile}.tmp`;
+  await fs.writeFile(tempFile, JSON.stringify(payload, null, 2));
+  await fs.rename(tempFile, outFile);
+  updateStatus({
+    state: "done",
+    progress: 100,
+    message: `Collected ${events.length} dashboard events.`,
+    eventsCollected: events.length,
+    totalEvents: events.length,
+    generatedAt: payload.generatedAt,
+    finishedAt: new Date().toISOString(),
+    currentSource: ""
+  });
   return payload;
 }
 
@@ -270,6 +347,11 @@ async function startStaticServer() {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
     if (url.pathname === "/local-data/token-events.json") {
       await serveFile(response, outFile);
+      return;
+    }
+    if (url.pathname === "/local-data/status.json") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      response.end(statusJson());
       return;
     }
     const distExists = await exists(path.join(distRoot, "index.html"));
@@ -309,5 +391,14 @@ if (shouldOpen) await openBrowser(url);
 if (!noCollect) {
   collect()
     .then((payload) => console.log(`Collected ${payload.events.length} dashboard events in ${payload.scannedPaths.length || 0} source groups.`))
-    .catch((error) => console.error(`Collection failed: ${error.message}`));
+    .catch((error) => {
+      updateStatus({
+        state: "error",
+        progress: 100,
+        message: "Collection failed.",
+        error: error.message,
+        finishedAt: new Date().toISOString()
+      });
+      console.error(`Collection failed: ${error.message}`);
+    });
 }

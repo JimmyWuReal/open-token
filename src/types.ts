@@ -23,6 +23,25 @@ export type DataPayload = {
   events: TokenEvent[];
 };
 
+export type CollectionStatus = {
+  state: "idle" | "running" | "done" | "error";
+  progress: number;
+  message: string;
+  rootsTotal: number;
+  rootsScanned: number;
+  filesDiscovered: number;
+  filesParsed: number;
+  eventsCollected: number;
+  scannedPaths: string[];
+  generatedAt?: string;
+  startedAt?: string;
+  updatedAt?: string;
+  finishedAt?: string;
+  currentSource?: string;
+  totalEvents?: number;
+  error?: string;
+};
+
 export type Filters = {
   range: "24h" | "7d" | "30d" | "all";
   provider: string;

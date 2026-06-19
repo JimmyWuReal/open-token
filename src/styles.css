@@ -55,6 +55,58 @@ button {
   border: 1px solid #d9d7cc;
 }
 
+.collection-status {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 20px;
+  padding: 14px 0 16px;
+  border-bottom: 1px solid #d9d7cc;
+}
+
+.collection-copy {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.collection-copy div {
+  display: grid;
+  gap: 4px;
+}
+
+.collection-copy span {
+  color: #147d64;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.collection-status.error .collection-copy span { color: #a14230; }
+.collection-copy b { font-size: 15px; }
+.collection-copy p {
+  color: #66736f;
+  font-size: 12px;
+  text-align: right;
+}
+
+.progress-wrap {
+  height: 8px;
+  overflow: hidden;
+  background: #e4e1d8;
+  border-radius: 999px;
+}
+
+.progress-wrap i {
+  display: block;
+  height: 100%;
+  min-width: 8px;
+  background: #147d64;
+  border-radius: inherit;
+  transition: width 260ms ease;
+}
+
+.collection-status.error .progress-wrap i { background: #a14230; }
+
 .metric {
   display: grid;
   gap: 8px;
@@ -134,6 +186,8 @@ code { width: fit-content; max-width: 100%; overflow: hidden; text-overflow: ell
 
 @media (max-width: 900px) {
   .topbar { align-items: flex-start; flex-direction: column; }
+  .collection-copy { align-items: flex-start; flex-direction: column; }
+  .collection-copy p { text-align: left; }
   .metrics, .filters, .grid { grid-template-columns: 1fr 1fr; }
   .panel.wide { grid-column: span 2; }
   .event-row { grid-template-columns: 1fr 1fr; }

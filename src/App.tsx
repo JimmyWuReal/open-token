@@ -1,22 +1,48 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { all, filterEvents, formatCurrency, formatNumber, group, options, summarize, timeline, tokens } from "./analytics";
-import { loadPayload } from "./data";
-import type { DataPayload, Filters, TokenEvent } from "./types";
+import { loadCollectionStatus, loadPayload } from "./data";
+import type { CollectionStatus, DataPayload, Filters, TokenEvent } from "./types";
 
 const initialFilters: Filters = { range: "7d", provider: all, model: all, tool: all };
 
 export default function App() {
   const [payload, setPayload] = useState<DataPayload | null>(null);
   const [isLocal, setIsLocal] = useState(false);
+  const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null);
   const [filters, setFilters] = useState<Filters>(initialFilters);
+  const lastLoadedGeneratedAt = useRef("");
+
+  const refreshPayload = useCallback(async () => {
+    const { payload, local } = await loadPayload();
+    setPayload(payload);
+    setIsLocal(local);
+    lastLoadedGeneratedAt.current = payload.generatedAt;
+  }, []);
 
   useEffect(() => {
-    loadPayload().then(({ payload, local }) => {
-      setPayload(payload);
-      setIsLocal(local);
-    });
-  }, []);
+    refreshPayload();
+  }, [refreshPayload]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshStatus() {
+      const status = await loadCollectionStatus();
+      if (cancelled) return;
+      setCollectionStatus(status);
+      if (status?.state === "done" && status.generatedAt && status.generatedAt !== lastLoadedGeneratedAt.current) {
+        await refreshPayload();
+      }
+    }
+
+    refreshStatus();
+    const interval = window.setInterval(refreshStatus, 900);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [refreshPayload]);
 
   const events = payload?.events ?? [];
   const filtered = useMemo(() => filterEvents(events, filters), [events, filters]);
@@ -36,6 +62,8 @@ export default function App() {
         </div>
         <button onClick={() => window.location.reload()} type="button">Reload</button>
       </header>
+
+      <CollectionProgress status={collectionStatus} local={isLocal} />
 
       <section className="metrics" aria-label="Token analytics summary">
         <Metric label="Cost" value={formatCurrency(summary.cost)} detail={`${formatNumber(filtered.length)} events`} />
@@ -80,6 +108,36 @@ export default function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function CollectionProgress({ status, local }: { status: CollectionStatus | null; local: boolean }) {
+  if (!status || status.state === "idle") return null;
+
+  const progress = Math.max(0, Math.min(100, Math.round(status.progress || 0)));
+  const eventText = status.state === "done"
+    ? `${formatNumber(status.totalEvents ?? status.eventsCollected)} events ready`
+    : `${formatNumber(status.eventsCollected)} events found`;
+  const fileText = status.filesDiscovered
+    ? `${formatNumber(status.filesParsed)} of ${formatNumber(status.filesDiscovered)} files parsed`
+    : `${formatNumber(status.rootsScanned)} of ${formatNumber(status.rootsTotal)} sources scanned`;
+  const statusText = status.state === "error"
+    ? (status.error || status.message)
+    : status.message;
+
+  return (
+    <section className={`collection-status ${status.state}`} aria-live="polite">
+      <div className="collection-copy">
+        <div>
+          <span>{status.state === "running" ? "Collecting local metadata" : status.state === "done" ? "Collection complete" : "Collection issue"}</span>
+          <b>{statusText}</b>
+        </div>
+        <p>{eventText} · {fileText}{local ? "" : " · showing demo data until local data is ready"}</p>
+      </div>
+      <div className="progress-wrap" aria-label="Collection progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} role="progressbar">
+        <i style={{ width: `${progress}%` }} />
+      </div>
+    </section>
   );
 }
 

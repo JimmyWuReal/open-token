@@ -11,7 +11,7 @@ npm install
 npm start
 ```
 
-The CLI starts a small local static server at `http://127.0.0.1:5173`, opens the browser, and collects sanitized local metrics in the background. Startup is designed to stay under 10 seconds; local collection stops after a short budget and the dashboard still opens.
+The CLI starts a small local static server at `http://127.0.0.1:5173`, opens the browser, and collects sanitized local metrics in the background. The dashboard loads first, then shows collection progress while all discovered local metadata is gathered.
 
 ## Use As A Package
 
