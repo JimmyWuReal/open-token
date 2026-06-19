@@ -6,6 +6,8 @@ It does not copy prompts, assistant messages, file contents, tool output, secret
 
 ## Quick Start
 
+Requires Node.js 20 or newer.
+
 ```bash
 npm install
 npm start
