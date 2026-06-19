@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { dailyTotals, formatCurrency, formatNumber, lastDays, lifetime, longestStreak } from "./analytics";
+import { dailyTotals, formatCurrency, formatNumber, formatTokens, lastDays, lifetime, longestStreak } from "./analytics";
 import type { DayTotal } from "./analytics";
 import { loadCollectionStatus, loadPayload, requestCollectionRefresh } from "./data";
 import type { CollectionStatus, DataPayload } from "./types";
@@ -89,9 +89,7 @@ export default function App() {
       <header className="profile">
         <div className="avatar" aria-hidden="true">JW</div>
         <div className="profile-id">
-          <p className="eyebrow">{isLocal ? "Local computer data" : "Demo data"}{payload?.generatedAt ? ` · updated ${new Date(payload.generatedAt).toLocaleTimeString()}` : ""}</p>
           <h1>Jordan Walters</h1>
-          <p className="subhead">Token, cost, and streak analytics across your AI development sessions.</p>
         </div>
         <div className="profile-actions">
           <label className="toggle-control">
@@ -164,7 +162,7 @@ function Overview({
   return (
     <>
       <section className="stats" aria-label="Lifetime totals">
-        <Stat label="Lifetime tokens" value={formatNumber(lifetimeTokens)} detail="All recorded sessions" />
+        <Stat label="Lifetime tokens" value={formatTokens(lifetimeTokens)} detail="All recorded sessions" />
         <Stat label="Lifetime cost" value={formatCurrency(lifetimeCost)} detail="Estimated spend" />
         <Stat label="Longest streak" value={`${formatNumber(streak)} ${streak === 1 ? "day" : "days"}`} detail="Consecutive active days" />
       </section>
@@ -253,7 +251,7 @@ function Heatmap({ days, mode, showTip, hideTip }: { days: DayTotal[]; mode: Hea
                 if (!day) return <span className="cell empty" key={row} />;
                 const value = mode === "tokens" ? day.tokens : day.cost;
                 const detail = value > 0
-                  ? `${mode === "tokens" ? formatNumber(day.tokens) + " tokens" : formatCurrency(day.cost)}`
+                  ? `${mode === "tokens" ? formatTokens(day.tokens) + " tokens" : formatCurrency(day.cost)}`
                   : "No activity";
                 return (
                   <span
@@ -290,7 +288,7 @@ function DailyChart({ days, showTip, hideTip }: { days: DayTotal[]; showTip: (ev
       <div className="bars-row">
         {days.map((day) => {
           const height = day.tokens > 0 ? Math.max(2, (day.tokens / max) * 100) : 0;
-          const detail = day.tokens > 0 ? `${formatNumber(day.tokens)} tokens` : "No activity";
+          const detail = day.tokens > 0 ? `${formatTokens(day.tokens)} tokens` : "No activity";
           return (
             <div
               className="bar-col"
@@ -322,28 +320,34 @@ function Placeholder({ name }: { name: string }) {
 }
 
 function CollectionProgress({ status, local }: { status: CollectionStatus | null; local: boolean }) {
-  if (!status || status.state === "idle") return null;
+  if (!status || status.state === "idle" || status.state === "done") return null;
 
   const progress = Math.max(0, Math.min(100, Math.round(status.progress || 0)));
-  const eventText = status.state === "done"
-    ? `${formatNumber(status.totalEvents ?? status.eventsCollected)} events ready`
-    : `${formatNumber(status.eventsCollected)} events found`;
   const fileText = status.filesDiscovered
     ? `${formatNumber(status.filesParsed)} of ${formatNumber(status.filesDiscovered)} files parsed`
     : `${formatNumber(status.rootsScanned)} of ${formatNumber(status.rootsTotal)} sources scanned`;
-  const statusText = status.state === "error"
-    ? (status.error || status.message)
-    : status.message;
+
+  if (status.state === "error") {
+    return (
+      <section className="collection-status error" aria-live="polite">
+        <div className="collection-copy">
+          <div>
+            <span>Collection issue</span>
+            <b>{status.error || status.message}</b>
+          </div>
+        </div>
+        <div className="progress-wrap" aria-label="Collection progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} role="progressbar">
+          <i style={{ width: `${progress}%` }} />
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className={`collection-status ${status.state}`} aria-live="polite">
-      <div className="collection-copy">
-        <div>
-          <span>{status.state === "running" ? "Collecting local metadata" : status.state === "done" ? "Collection complete" : "Collection issue"}</span>
-          <b>{statusText}</b>
-        </div>
-        <p>{eventText} · {fileText}{local ? "" : " · showing demo data until local data is ready"}</p>
-      </div>
+    <section className="loading-screen" aria-live="polite" aria-busy="true">
+      <div className="loading-spinner" aria-hidden="true" />
+      <b>{status.message || "Collecting local metadata"}</b>
+      <p>{formatNumber(status.eventsCollected)} events found · {fileText}{local ? "" : " · showing demo data until local data is ready"}</p>
       <div className="progress-wrap" aria-label="Collection progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} role="progressbar">
         <i style={{ width: `${progress}%` }} />
       </div>

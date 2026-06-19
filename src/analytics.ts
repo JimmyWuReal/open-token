@@ -10,6 +10,15 @@ export function formatNumber(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
 }
 
+/** Abbreviate a token count to a single decimal, e.g. 33.2m or 12.3b. */
+export function formatTokens(value: number) {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}b`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return formatNumber(value);
+}
+
 export function formatCurrency(value: number) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
 }
