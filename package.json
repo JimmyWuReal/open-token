@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "start": "node ./bin/open-token.mjs",
-    "dev": "node ./bin/open-token.mjs --no-open",
+    "dev": "vite --host 127.0.0.1",
     "collect": "node ./bin/open-token.mjs --collect-only",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1"

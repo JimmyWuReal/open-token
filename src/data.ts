@@ -63,3 +63,15 @@ export async function loadCollectionStatus(): Promise<CollectionStatus | null> {
     return null;
   }
 }
+
+export async function requestCollectionRefresh(): Promise<boolean> {
+  try {
+    const response = await fetch(`/local-data/refresh?ts=${Date.now()}`, {
+      method: "POST",
+      cache: "no-store"
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}

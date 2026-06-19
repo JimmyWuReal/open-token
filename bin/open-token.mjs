@@ -71,6 +71,8 @@ function statusJson() {
   return JSON.stringify(collectionStatus, null, 2);
 }
 
+let activeCollection = null;
+
 function costUsd(event) {
   const key = `${event.provider} ${event.model}`.toLowerCase();
   const price = key.includes("claude")
@@ -247,6 +249,7 @@ async function collect() {
     filesDiscovered: 0,
     filesParsed: 0,
     eventsCollected: 0,
+    totalEvents: 0,
     scannedPaths: [],
     generatedAt: "",
     startedAt: new Date().toISOString(),
@@ -331,10 +334,10 @@ function safeJoin(base, requestPath) {
   return resolved.startsWith(base) ? resolved : base;
 }
 
-async function serveFile(response, filePath) {
+async function serveFile(response, filePath, headers = {}) {
   try {
     const data = await fs.readFile(filePath);
-    response.writeHead(200, { "content-type": mimeTypes.get(path.extname(filePath)) || "application/octet-stream" });
+    response.writeHead(200, { "content-type": mimeTypes.get(path.extname(filePath)) || "application/octet-stream", ...headers });
     response.end(data);
   } catch {
     response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -342,11 +345,45 @@ async function serveFile(response, filePath) {
   }
 }
 
+function startCollection() {
+  if (activeCollection) return activeCollection;
+  activeCollection = collect()
+    .then((payload) => {
+      console.log(`Collected ${payload.events.length} dashboard events in ${payload.scannedPaths.length || 0} source groups.`);
+      return payload;
+    })
+    .catch((error) => {
+      updateStatus({
+        state: "error",
+        progress: 100,
+        message: "Collection failed.",
+        error: error.message,
+        finishedAt: new Date().toISOString()
+      });
+      console.error(`Collection failed: ${error.message}`);
+      throw error;
+    })
+    .finally(() => {
+      activeCollection = null;
+    });
+  return activeCollection;
+}
+
 async function startStaticServer() {
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
+    if (url.pathname === "/local-data/refresh") {
+      response.writeHead(noCollect ? 409 : 202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      if (noCollect) {
+        response.end(JSON.stringify({ ok: false, message: "Collection is disabled for this server." }));
+        return;
+      }
+      startCollection().catch(() => {});
+      response.end(statusJson());
+      return;
+    }
     if (url.pathname === "/local-data/token-events.json") {
-      await serveFile(response, outFile);
+      await serveFile(response, outFile, { "cache-control": "no-store" });
       return;
     }
     if (url.pathname === "/local-data/status.json") {
@@ -389,16 +426,5 @@ console.log(`Open Token is running at ${url}`);
 if (shouldOpen) await openBrowser(url);
 
 if (!noCollect) {
-  collect()
-    .then((payload) => console.log(`Collected ${payload.events.length} dashboard events in ${payload.scannedPaths.length || 0} source groups.`))
-    .catch((error) => {
-      updateStatus({
-        state: "error",
-        progress: 100,
-        message: "Collection failed.",
-        error: error.message,
-        finishedAt: new Date().toISOString()
-      });
-      console.error(`Collection failed: ${error.message}`);
-    });
+  startCollection().catch(() => {});
 }

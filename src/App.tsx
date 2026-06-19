@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { all, filterEvents, formatCurrency, formatNumber, group, options, summarize, timeline, tokens } from "./analytics";
-import { loadCollectionStatus, loadPayload } from "./data";
+import { loadCollectionStatus, loadPayload, requestCollectionRefresh } from "./data";
 import type { CollectionStatus, DataPayload, Filters, TokenEvent } from "./types";
 
 const initialFilters: Filters = { range: "7d", provider: all, model: all, tool: all };
@@ -11,6 +11,7 @@ export default function App() {
   const [isLocal, setIsLocal] = useState(false);
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null);
   const [autoReload, setAutoReload] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const lastLoadedGeneratedAt = useRef("");
 
@@ -25,11 +26,25 @@ export default function App() {
     refreshPayload();
   }, [refreshPayload]);
 
+  const reloadDashboard = useCallback(async () => {
+    setIsReloading(true);
+    try {
+      const collectionStarted = await requestCollectionRefresh();
+      if (!collectionStarted) await refreshPayload();
+      const status = await loadCollectionStatus();
+      setCollectionStatus(status);
+    } finally {
+      setIsReloading(false);
+    }
+  }, [refreshPayload]);
+
   useEffect(() => {
     if (!autoReload) return;
-    const interval = window.setInterval(refreshPayload, 60_000);
+    const interval = window.setInterval(() => {
+      void reloadDashboard();
+    }, 60_000);
     return () => window.clearInterval(interval);
-  }, [autoReload, refreshPayload]);
+  }, [autoReload, reloadDashboard]);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +87,7 @@ export default function App() {
             <input type="checkbox" checked={autoReload} onChange={(event) => setAutoReload(event.target.checked)} />
             <span>Auto reload 60s</span>
           </label>
-          <button onClick={() => void refreshPayload()} type="button">Reload</button>
+          <button onClick={() => void reloadDashboard()} disabled={isReloading} type="button">{isReloading ? "Reloading" : "Reload"}</button>
         </div>
       </header>
 

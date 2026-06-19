@@ -58,3 +58,5 @@ Dashboard data is written to `~/.open-token/token-events.json`. Set `OPEN_TOKEN_
 npm run dev
 npm run build
 ```
+
+`npm run dev` starts Vite with hot reload and reads existing dashboard data from `~/.open-token/token-events.json`. Use `npm run collect` to regenerate local data while developing, or `npm start` to run the packaged dashboard server with background collection.
