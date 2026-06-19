@@ -10,6 +10,7 @@ export default function App() {
   const [payload, setPayload] = useState<DataPayload | null>(null);
   const [isLocal, setIsLocal] = useState(false);
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null);
+  const [autoReload, setAutoReload] = useState(false);
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const lastLoadedGeneratedAt = useRef("");
 
@@ -23,6 +24,12 @@ export default function App() {
   useEffect(() => {
     refreshPayload();
   }, [refreshPayload]);
+
+  useEffect(() => {
+    if (!autoReload) return;
+    const interval = window.setInterval(refreshPayload, 60_000);
+    return () => window.clearInterval(interval);
+  }, [autoReload, refreshPayload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +67,13 @@ export default function App() {
           <h1>Open Token</h1>
           <p className="subhead">Fast token, cost, latency, provider, and model analytics from local AI development sessions.</p>
         </div>
-        <button onClick={() => window.location.reload()} type="button">Reload</button>
+        <div className="topbar-actions">
+          <label className="toggle-control">
+            <input type="checkbox" checked={autoReload} onChange={(event) => setAutoReload(event.target.checked)} />
+            <span>Auto reload 60s</span>
+          </label>
+          <button onClick={() => void refreshPayload()} type="button">Reload</button>
+        </div>
       </header>
 
       <CollectionProgress status={collectionStatus} local={isLocal} />

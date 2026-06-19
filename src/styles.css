@@ -46,6 +46,39 @@ button {
   cursor: pointer;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.toggle-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid #b9b7ad;
+  border-radius: 6px;
+  background: #fffdfa;
+  padding: 0 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-control input {
+  width: 16px;
+  height: 16px;
+  accent-color: #147d64;
+}
+
+.toggle-control span {
+  color: #16201d;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -186,6 +219,7 @@ code { width: fit-content; max-width: 100%; overflow: hidden; text-overflow: ell
 
 @media (max-width: 900px) {
   .topbar { align-items: flex-start; flex-direction: column; }
+  .topbar-actions { flex-wrap: wrap; }
   .collection-copy { align-items: flex-start; flex-direction: column; }
   .collection-copy p { text-align: left; }
   .metrics, .filters, .grid { grid-template-columns: 1fr 1fr; }
