@@ -111,6 +111,65 @@ export function lastDays(totals: Map<string, { tokens: number; cost: number }>, 
   return out;
 }
 
+export type DayProviderTotal = {
+  date: string;
+  tokens: number;
+  cost: number;
+  byProvider: Record<string, number>;
+  costByProvider: Record<string, number>;
+};
+
+type ProviderDay = { tokens: number; cost: number; byProvider: Map<string, number>; costByProvider: Map<string, number> };
+
+/** Sum tokens and cost (each split by provider) per calendar day (UTC), keyed `YYYY-MM-DD`. */
+export function dailyProviderTotals(events: TokenEvent[]) {
+  const days = new Map<string, ProviderDay>();
+  for (const event of events) {
+    const day = event.timestamp.slice(0, 10);
+    const current = days.get(day) || { tokens: 0, cost: 0, byProvider: new Map<string, number>(), costByProvider: new Map<string, number>() };
+    const eventTokens = tokens(event);
+    current.tokens += eventTokens;
+    current.cost += event.costUsd;
+    current.byProvider.set(event.provider, (current.byProvider.get(event.provider) || 0) + eventTokens);
+    current.costByProvider.set(event.provider, (current.costByProvider.get(event.provider) || 0) + event.costUsd);
+    days.set(day, current);
+  }
+  return days;
+}
+
+/** Build the last `count` days with per-provider token and cost splits, filling gaps with zeros. */
+export function lastDaysByProvider(totals: Map<string, ProviderDay>, count: number): DayProviderTotal[] {
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const out: DayProviderTotal[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const date = dayKey(todayUtc - i * 86_400_000);
+    const value = totals.get(date);
+    out.push({
+      date,
+      tokens: value?.tokens ?? 0,
+      cost: value?.cost ?? 0,
+      byProvider: value ? Object.fromEntries(value.byProvider) : {},
+      costByProvider: value ? Object.fromEntries(value.costByProvider) : {}
+    });
+  }
+  return out;
+}
+
+/** Providers present across the given days, ordered by total of `metric` descending. */
+export function providerOrder(days: DayProviderTotal[], metric: "tokens" | "cost" = "tokens"): string[] {
+  const totals = new Map<string, number>();
+  for (const day of days) {
+    const source = metric === "cost" ? day.costByProvider : day.byProvider;
+    for (const [provider, value] of Object.entries(source)) {
+      totals.set(provider, (totals.get(provider) || 0) + value);
+    }
+  }
+  return Array.from(totals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([provider]) => provider);
+}
+
 export function lifetime(events: TokenEvent[]) {
   return events.reduce(
     (acc, event) => {

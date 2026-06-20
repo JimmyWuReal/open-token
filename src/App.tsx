@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { dailyTotals, formatCurrency, formatNumber, formatTokens, lastDays, lifetime, longestStreak } from "./analytics";
-import type { DayTotal } from "./analytics";
+import { dailyProviderTotals, dailyTotals, formatCurrency, formatNumber, formatTokens, lastDays, lastDaysByProvider, lifetime, longestStreak, providerOrder } from "./analytics";
+import type { DayProviderTotal, DayTotal } from "./analytics";
 import { loadCollectionStatus, loadPayload, requestCollectionRefresh } from "./data";
 import type { CollectionStatus, DataPayload } from "./types";
 
 const TABS = ["Overview", "Sessions", "Models", "Settings"] as const;
 type Tab = (typeof TABS)[number];
 type HeatMode = "tokens" | "cost";
+type Metric = "tokens" | "cost";
 
 type TipState = { x: number; y: number; title: string; detail: string } | null;
 
@@ -77,7 +78,8 @@ export default function App() {
   const totalsLifetime = useMemo(() => lifetime(events), [events]);
   const streak = useMemo(() => longestStreak(totals), [totals]);
   const year = useMemo(() => lastDays(totals, 365), [totals]);
-  const month = useMemo(() => lastDays(totals, 30), [totals]);
+  const providerTotals = useMemo(() => dailyProviderTotals(events), [events]);
+  const month = useMemo(() => lastDaysByProvider(providerTotals, 30), [providerTotals]);
 
   const showTip = useCallback((event: { clientX: number; clientY: number }, title: string, detail: string) => {
     setTip({ x: event.clientX, y: event.clientY, title, detail });
@@ -153,11 +155,13 @@ function Overview({
   lifetimeCost: number;
   streak: number;
   year: DayTotal[];
-  month: DayTotal[];
+  month: DayProviderTotal[];
   showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void;
   hideTip: () => void;
 }) {
   const [heatMode, setHeatMode] = useState<HeatMode>("tokens");
+  const [chartMetric, setChartMetric] = useState<Metric>("tokens");
+  const chartProviders = useMemo(() => providerOrder(month, chartMetric), [month, chartMetric]);
 
   return (
     <>
@@ -178,11 +182,15 @@ function Overview({
         <Heatmap days={year} mode={heatMode} showTip={showTip} hideTip={hideTip} />
       </section>
 
-      <section className="card" aria-label="Tokens over the last 30 days">
+      <section className="card" aria-label={`${chartMetric === "cost" ? "Cost" : "Tokens"} over the last 30 days`}>
         <div className="card-head">
-          <h2>Tokens · last 30 days</h2>
+          <h2>{chartMetric === "cost" ? "Cost" : "Tokens"} · last 30 days</h2>
+          <div className="segmented" role="group" aria-label="Chart metric">
+            <button type="button" className={chartMetric === "tokens" ? "seg active" : "seg"} onClick={() => setChartMetric("tokens")}>Tokens</button>
+            <button type="button" className={chartMetric === "cost" ? "seg active" : "seg"} onClick={() => setChartMetric("cost")}>Cost</button>
+          </div>
         </div>
-        <DailyChart days={month} showTip={showTip} hideTip={hideTip} />
+        <DailyChart days={month} providers={chartProviders} metric={chartMetric} showTip={showTip} hideTip={hideTip} />
       </section>
     </>
   );
@@ -280,24 +288,51 @@ function Heatmap({ days, mode, showTip, hideTip }: { days: DayTotal[]; mode: Hea
   );
 }
 
-function DailyChart({ days, showTip, hideTip }: { days: DayTotal[]; showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void; hideTip: () => void }) {
-  const max = useMemo(() => Math.max(1, ...days.map((day) => day.tokens)), [days]);
+function seriesClass(index: number) {
+  return `series-${Math.min(index, 5)}`;
+}
+
+function providerValue(day: DayProviderTotal, provider: string, metric: Metric) {
+  const source = metric === "cost" ? day.costByProvider : day.byProvider;
+  return source[provider] || 0;
+}
+
+function dayMetric(day: DayProviderTotal, metric: Metric) {
+  return metric === "cost" ? day.cost : day.tokens;
+}
+
+function formatMetric(value: number, metric: Metric) {
+  return metric === "cost" ? formatCurrency(value) : `${formatTokens(value)} tokens`;
+}
+
+function DailyChart({ days, providers, metric, showTip, hideTip }: { days: DayProviderTotal[]; providers: string[]; metric: Metric; showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void; hideTip: () => void }) {
+  const max = useMemo(() => Math.max(Number.EPSILON, ...days.map((day) => dayMetric(day, metric))), [days, metric]);
 
   return (
     <div className="bar-chart">
       <div className="bars-row">
         {days.map((day) => {
-          const height = day.tokens > 0 ? Math.max(2, (day.tokens / max) * 100) : 0;
-          const detail = day.tokens > 0 ? `${formatTokens(day.tokens)} tokens` : "No activity";
+          const total = dayMetric(day, metric);
+          const height = total > 0 ? Math.max(2, (total / max) * 100) : 0;
           return (
-            <div
-              className="bar-col"
-              key={day.date}
-              onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
-              onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
-              onMouseLeave={hideTip}
-            >
-              <div className="bar-fill" style={{ height: `${height}%` }} />
+            <div className="bar-col" key={day.date}>
+              <div className="bar-stack" style={{ height: `${height}%` }}>
+                {providers.map((provider, index) => {
+                  const value = providerValue(day, provider, metric);
+                  if (value <= 0) return null;
+                  const detail = `${provider} · ${formatMetric(value, metric)}`;
+                  return (
+                    <div
+                      key={provider}
+                      className={`bar-seg ${seriesClass(index)}`}
+                      style={{ height: `${(value / total) * 100}%` }}
+                      onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
+                      onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
+                      onMouseLeave={hideTip}
+                    />
+                  );
+                })}
+              </div>
             </div>
           );
         })}
@@ -305,6 +340,13 @@ function DailyChart({ days, showTip, hideTip }: { days: DayTotal[]; showTip: (ev
       <div className="bar-axis">
         <span>{days.length ? fmtDay(days[0].date) : ""}</span>
         <span>{days.length ? fmtDay(days[days.length - 1].date) : ""}</span>
+      </div>
+      <div className="chart-legend">
+        {providers.map((provider, index) => (
+          <span className="legend-item" key={provider}>
+            <i className={`swatch ${seriesClass(index)}`} />{provider}
+          </span>
+        ))}
       </div>
     </div>
   );

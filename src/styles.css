@@ -21,6 +21,14 @@
   --heat-3: #9a9aa1;
   --heat-4: #ededf0;
 
+  /* Stacked-bar provider series — a grayscale band, brightest first. */
+  --series-0: #ededf0;
+  --series-1: #b6b6bb;
+  --series-2: #84848a;
+  --series-3: #5a5a5e;
+  --series-4: #3c3c40;
+  --series-5: #2a2a2d;
+
   /* Smooth edges */
   --radius-sm: 8px;
   --radius-md: 14px;
@@ -326,19 +334,40 @@ button:disabled { cursor: default; opacity: .5; }
 .heatmap-legend span:first-child { margin-right: 4px; }
 .heatmap-legend span:last-child { margin-left: 4px; }
 
-/* 30-day bar chart */
+/* 30-day bar chart — stacked by provider */
 .bar-chart { display: grid; gap: 10px; }
 .bars-row { display: flex; align-items: flex-end; gap: 3px; height: 220px; }
-.bar-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; cursor: pointer; }
-.bar-fill {
+.bar-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; }
+.bar-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 2px 2px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.bar-seg {
   width: 100%;
   min-height: 0;
-  background: var(--fill);
-  border-radius: var(--radius-sm) var(--radius-sm) 2px 2px;
+  /* Hairline gap in the card color so adjacent providers read as separate parts. */
+  border-top: 1px solid var(--surface);
   transition: opacity 160ms ease;
 }
-.bar-col:hover .bar-fill { opacity: .7; }
+.bar-seg:first-child { border-top: 0; }
+.bar-seg:hover { opacity: .7; }
+.bar-seg.series-0, .swatch.series-0 { background: var(--series-0); }
+.bar-seg.series-1, .swatch.series-1 { background: var(--series-1); }
+.bar-seg.series-2, .swatch.series-2 { background: var(--series-2); }
+.bar-seg.series-3, .swatch.series-3 { background: var(--series-3); }
+.bar-seg.series-4, .swatch.series-4 { background: var(--series-4); }
+.bar-seg.series-5, .swatch.series-5 { background: var(--series-5); }
 .bar-axis { display: flex; justify-content: space-between; color: var(--ink-400); font-size: 11px; }
+
+/* Chart legend */
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--ink-500); font-size: 11px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; }
 
 /* Tooltip */
 .tooltip {
