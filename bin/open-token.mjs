@@ -16,6 +16,7 @@ const deviceName = os.hostname() || os.platform();
 const args = new Set(process.argv.slice(2));
 const argList = process.argv.slice(2);
 const port = numberArg("--port", 5173);
+const host = "127.0.0.1";
 const shouldOpen = !args.has("--no-open") && !args.has("--collect-only");
 const collectOnly = args.has("--collect-only");
 const noCollect = args.has("--no-collect");
@@ -371,7 +372,7 @@ function startCollection() {
 
 async function startStaticServer() {
   const server = http.createServer(async (request, response) => {
-    const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
+    const url = new URL(request.url || "/", `http://${request.headers.host || host}`);
     if (url.pathname === "/local-data/refresh") {
       response.writeHead(noCollect ? 409 : 202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
       if (noCollect) {
@@ -401,11 +402,43 @@ async function startStaticServer() {
     await serveFile(response, candidate);
   });
 
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, "127.0.0.1", resolve);
-  });
-  return server;
+  const selectedPort = await listenOnAvailablePort(server, port);
+  return { server, port: selectedPort };
+}
+
+async function listenOnAvailablePort(server, preferredPort) {
+  const lastPort = Math.min(65535, preferredPort + 100);
+
+  for (let candidatePort = preferredPort; candidatePort <= lastPort; candidatePort += 1) {
+    const listening = await new Promise((resolve, reject) => {
+      function cleanup() {
+        server.off("error", onError);
+        server.off("listening", onListening);
+      }
+
+      function onError(error) {
+        cleanup();
+        if (error.code === "EADDRINUSE") {
+          resolve(false);
+          return;
+        }
+        reject(error);
+      }
+
+      function onListening() {
+        cleanup();
+        resolve(true);
+      }
+
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(candidatePort, host);
+    });
+
+    if (listening) return candidatePort;
+  }
+
+  throw new Error(`No available local port found from ${preferredPort} to ${lastPort}.`);
 }
 
 async function openBrowser(url) {
@@ -420,8 +453,11 @@ if (collectOnly) {
   process.exit(0);
 }
 
-await startStaticServer();
-const url = `http://127.0.0.1:${port}/`;
+const { port: selectedPort } = await startStaticServer();
+const url = `http://${host}:${selectedPort}/`;
+if (selectedPort !== port) {
+  console.log(`Port ${port} is already in use; using ${selectedPort} instead.`);
+}
 console.log(`Open Token is running at ${url}`);
 if (shouldOpen) await openBrowser(url);
 
