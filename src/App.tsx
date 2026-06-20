@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { dailyTotals, formatCurrency, formatNumber, formatTokens, lastDays, lifetime, longestStreak } from "./analytics";
-import type { DayTotal } from "./analytics";
+import { dailyProviderTotals, dailyTotals, formatCurrency, formatNumber, formatTokens, lastDays, lastDaysByProvider, lifetime, longestStreak, providerOrder } from "./analytics";
+import type { DayProviderTotal, DayTotal, ProviderTotals } from "./analytics";
 import { loadCollectionStatus, loadPayload, requestCollectionRefresh } from "./data";
 import type { CollectionStatus, DataPayload } from "./types";
 
-const TABS = ["Overview", "Sessions", "Models", "Settings"] as const;
+const TABS = ["Overview", "Provider", "Models", "Settings"] as const;
 type Tab = (typeof TABS)[number];
 type HeatMode = "tokens" | "cost";
+type Metric = "tokens" | "cost";
+type ChartView = "value" | "share";
+type DayRange = 14 | 30;
 
 type TipState = { x: number; y: number; title: string; detail: string } | null;
 
@@ -77,7 +80,9 @@ export default function App() {
   const totalsLifetime = useMemo(() => lifetime(events), [events]);
   const streak = useMemo(() => longestStreak(totals), [totals]);
   const year = useMemo(() => lastDays(totals, 365), [totals]);
-  const month = useMemo(() => lastDays(totals, 30), [totals]);
+  const providerTotals = useMemo(() => dailyProviderTotals(events), [events]);
+  const month = useMemo(() => lastDaysByProvider(providerTotals, 30), [providerTotals]);
+  const providers = useMemo(() => providerOrder(month), [month]);
 
   const showTip = useCallback((event: { clientX: number; clientY: number }, title: string, detail: string) => {
     setTip({ x: event.clientX, y: event.clientY, title, detail });
@@ -123,9 +128,12 @@ export default function App() {
           streak={streak}
           year={year}
           month={month}
+          providers={providers}
           showTip={showTip}
           hideTip={hideTip}
         />
+      ) : tab === "Provider" ? (
+        <Provider providerTotals={providerTotals} showTip={showTip} hideTip={hideTip} />
       ) : (
         <Placeholder name={tab} />
       )}
@@ -146,6 +154,7 @@ function Overview({
   streak,
   year,
   month,
+  providers,
   showTip,
   hideTip
 }: {
@@ -153,7 +162,8 @@ function Overview({
   lifetimeCost: number;
   streak: number;
   year: DayTotal[];
-  month: DayTotal[];
+  month: DayProviderTotal[];
+  providers: string[];
   showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void;
   hideTip: () => void;
 }) {
@@ -182,7 +192,7 @@ function Overview({
         <div className="card-head">
           <h2>Tokens · last 30 days</h2>
         </div>
-        <DailyChart days={month} showTip={showTip} hideTip={hideTip} />
+        <DailyChart days={month} providers={providers} showTip={showTip} hideTip={hideTip} />
       </section>
     </>
   );
@@ -280,31 +290,233 @@ function Heatmap({ days, mode, showTip, hideTip }: { days: DayTotal[]; mode: Hea
   );
 }
 
-function DailyChart({ days, showTip, hideTip }: { days: DayTotal[]; showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void; hideTip: () => void }) {
-  const max = useMemo(() => Math.max(1, ...days.map((day) => day.tokens)), [days]);
+function seriesClass(index: number) {
+  return `series-${Math.min(index, 5)}`;
+}
+
+function DailyChart({ days, providers, showTip, hideTip }: { days: DayProviderTotal[]; providers: string[]; showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void; hideTip: () => void }) {
+  const maxTokens = useMemo(() => Math.max(1, ...days.map((day) => day.tokens)), [days]);
+  const maxCost = useMemo(() => Math.max(Number.EPSILON, ...days.map((day) => day.cost)), [days]);
+  const count = days.length || 1;
+  const costY = (cost: number) => (1 - cost / maxCost) * 100;
+  const costX = (index: number) => ((index + 0.5) / count) * 100;
+  const linePoints = days.map((day, index) => `${costX(index)},${costY(day.cost)}`).join(" ");
 
   return (
-    <div className="bar-chart">
-      <div className="bars-row">
-        {days.map((day) => {
-          const height = day.tokens > 0 ? Math.max(2, (day.tokens / max) * 100) : 0;
-          const detail = day.tokens > 0 ? `${formatTokens(day.tokens)} tokens` : "No activity";
-          return (
-            <div
-              className="bar-col"
+    <div className="combo-chart">
+      <div className="plot">
+        <div className="bars-row">
+          {days.map((day) => {
+            const height = day.tokens > 0 ? Math.max(2, (day.tokens / maxTokens) * 100) : 0;
+            return (
+              <div className="bar-col" key={day.date}>
+                <div className="bar-stack" style={{ height: `${height}%` }}>
+                  {providers.map((provider, index) => {
+                    const value = day.byProvider[provider] || 0;
+                    if (value <= 0) return null;
+                    const detail = `${provider} · ${formatTokens(value)} tokens`;
+                    return (
+                      <div
+                        key={provider}
+                        className={`bar-seg ${seriesClass(index)}`}
+                        style={{ height: `${(value / day.tokens) * 100}%` }}
+                        onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
+                        onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
+                        onMouseLeave={hideTip}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <svg className="cost-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points={linePoints} />
+        </svg>
+        <div className="cost-dots">
+          {days.map((day, index) => (
+            <span
               key={day.date}
-              onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
-              onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
+              className="cost-dot"
+              style={{ left: `${costX(index)}%`, top: `${costY(day.cost)}%` }}
+              onMouseEnter={(event) => showTip(event, fmtDay(day.date), `${formatCurrency(day.cost)} cost`)}
+              onMouseMove={(event) => showTip(event, fmtDay(day.date), `${formatCurrency(day.cost)} cost`)}
               onMouseLeave={hideTip}
-            >
-              <div className="bar-fill" style={{ height: `${height}%` }} />
-            </div>
-          );
-        })}
+            />
+          ))}
+        </div>
       </div>
       <div className="bar-axis">
         <span>{days.length ? fmtDay(days[0].date) : ""}</span>
         <span>{days.length ? fmtDay(days[days.length - 1].date) : ""}</span>
+      </div>
+      <div className="chart-legend">
+        {providers.map((provider, index) => (
+          <span className="legend-item" key={provider}>
+            <i className={`swatch ${seriesClass(index)}`} />{provider}
+          </span>
+        ))}
+        <span className="legend-item"><i className="swatch cost-swatch" />Cost</span>
+      </div>
+    </div>
+  );
+}
+
+type Tip = (event: { clientX: number; clientY: number }, title: string, detail: string) => void;
+
+function formatMetric(value: number, metric: Metric) {
+  return metric === "cost" ? formatCurrency(value) : `${formatTokens(value)} tokens`;
+}
+
+function Provider({ providerTotals, showTip, hideTip }: { providerTotals: ProviderTotals; showTip: Tip; hideTip: () => void }) {
+  const [range, setRange] = useState<DayRange>(30);
+  const [metric, setMetric] = useState<Metric>("tokens");
+  const [view, setView] = useState<ChartView>("value");
+
+  const days = useMemo(() => lastDaysByProvider(providerTotals, range), [providerTotals, range]);
+  const providers = useMemo(() => providerOrder(days, metric), [days, metric]);
+
+  const metricLabel = metric === "cost" ? "Cost" : "Tokens";
+
+  return (
+    <>
+      <section className="card" aria-label="Provider share">
+        <div className="card-head">
+          <h2>Provider share · {metricLabel.toLowerCase()} · last {range} days</h2>
+          <div className="segmented" role="group" aria-label="Share metric">
+            <button type="button" className={metric === "tokens" ? "seg active" : "seg"} onClick={() => setMetric("tokens")}>Tokens</button>
+            <button type="button" className={metric === "cost" ? "seg active" : "seg"} onClick={() => setMetric("cost")}>Cost</button>
+          </div>
+        </div>
+        <ShareBar days={days} providers={providers} metric={metric} showTip={showTip} hideTip={hideTip} />
+      </section>
+
+      <section className="card" aria-label="Provider breakdown over time">
+        <div className="card-head">
+          <h2>{metricLabel} by provider · last {range} days</h2>
+          <div className="card-controls">
+            <div className="segmented" role="group" aria-label="Day range">
+              <button type="button" className={range === 14 ? "seg active" : "seg"} onClick={() => setRange(14)}>14d</button>
+              <button type="button" className={range === 30 ? "seg active" : "seg"} onClick={() => setRange(30)}>30d</button>
+            </div>
+            <div className="segmented" role="group" aria-label="Chart metric">
+              <button type="button" className={metric === "tokens" ? "seg active" : "seg"} onClick={() => setMetric("tokens")}>Tokens</button>
+              <button type="button" className={metric === "cost" ? "seg active" : "seg"} onClick={() => setMetric("cost")}>Cost</button>
+            </div>
+            <div className="segmented" role="group" aria-label="Chart view">
+              <button type="button" className={view === "value" ? "seg active" : "seg"} onClick={() => setView("value")}>Value</button>
+              <button type="button" className={view === "share" ? "seg active" : "seg"} onClick={() => setView("share")}>Percent</button>
+            </div>
+          </div>
+        </div>
+        <ProviderChart days={days} providers={providers} metric={metric} view={view} showTip={showTip} hideTip={hideTip} />
+      </section>
+    </>
+  );
+}
+
+function dayMetric(day: DayProviderTotal, metric: Metric) {
+  return metric === "cost" ? day.cost : day.tokens;
+}
+
+function providerValue(day: DayProviderTotal, provider: string, metric: Metric) {
+  const source = metric === "cost" ? day.costByProvider : day.byProvider;
+  return source[provider] || 0;
+}
+
+function ShareBar({ days, providers, metric, showTip, hideTip }: { days: DayProviderTotal[]; providers: string[]; metric: Metric; showTip: Tip; hideTip: () => void }) {
+  const totals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const day of days) {
+      for (const provider of providers) map.set(provider, (map.get(provider) || 0) + providerValue(day, provider, metric));
+    }
+    return map;
+  }, [days, providers, metric]);
+  const grand = useMemo(() => Array.from(totals.values()).reduce((acc, value) => acc + value, 0), [totals]);
+
+  if (grand <= 0) return <p className="empty-note">No activity in this range.</p>;
+
+  return (
+    <div className="share">
+      <div className="share-bar" role="img" aria-label={`Provider ${metric} share`}>
+        {providers.map((provider, index) => {
+          const value = totals.get(provider) || 0;
+          if (value <= 0) return null;
+          const pct = (value / grand) * 100;
+          const detail = `${formatMetric(value, metric)} · ${pct.toFixed(1)}%`;
+          return (
+            <div
+              key={provider}
+              className={`share-seg ${seriesClass(index)}`}
+              style={{ width: `${pct}%` }}
+              onMouseEnter={(event) => showTip(event, provider, detail)}
+              onMouseMove={(event) => showTip(event, provider, detail)}
+              onMouseLeave={hideTip}
+            />
+          );
+        })}
+      </div>
+      <div className="chart-legend">
+        {providers.map((provider, index) => {
+          const value = totals.get(provider) || 0;
+          if (value <= 0) return null;
+          return (
+            <span className="legend-item" key={provider}>
+              <i className={`swatch ${seriesClass(index)}`} />{provider} · {((value / grand) * 100).toFixed(0)}%
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProviderChart({ days, providers, metric, view, showTip, hideTip }: { days: DayProviderTotal[]; providers: string[]; metric: Metric; view: ChartView; showTip: Tip; hideTip: () => void }) {
+  const max = useMemo(() => Math.max(Number.EPSILON, ...days.map((day) => dayMetric(day, metric))), [days, metric]);
+
+  return (
+    <div className="combo-chart">
+      <div className="plot">
+        <div className="bars-row">
+          {days.map((day) => {
+            const total = dayMetric(day, metric);
+            const height = total <= 0 ? 0 : view === "share" ? 100 : Math.max(2, (total / max) * 100);
+            return (
+              <div className="bar-col" key={day.date}>
+                <div className="bar-stack" style={{ height: `${height}%` }}>
+                  {providers.map((provider, index) => {
+                    const value = providerValue(day, provider, metric);
+                    if (value <= 0) return null;
+                    const pct = (value / total) * 100;
+                    const detail = `${provider} · ${formatMetric(value, metric)} · ${pct.toFixed(0)}%`;
+                    return (
+                      <div
+                        key={provider}
+                        className={`bar-seg ${seriesClass(index)}`}
+                        style={{ height: `${pct}%` }}
+                        onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
+                        onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
+                        onMouseLeave={hideTip}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="bar-axis">
+        <span>{days.length ? fmtDay(days[0].date) : ""}</span>
+        <span>{days.length ? fmtDay(days[days.length - 1].date) : ""}</span>
+      </div>
+      <div className="chart-legend">
+        {providers.map((provider, index) => (
+          <span className="legend-item" key={provider}>
+            <i className={`swatch ${seriesClass(index)}`} />{provider}
+          </span>
+        ))}
       </div>
     </div>
   );
