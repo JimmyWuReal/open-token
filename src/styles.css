@@ -21,6 +21,15 @@
   --heat-3: #9a9aa1;
   --heat-4: #ededf0;
 
+  /* Stacked-bar provider series — grayscale band, all below --ink-900 so the
+     cost line (the chart's brightest mark) always reads on top. */
+  --series-0: #d4d4d8;
+  --series-1: #a5a5ab;
+  --series-2: #7a7a80;
+  --series-3: #57575b;
+  --series-4: #3c3c40;
+  --series-5: #2a2a2d;
+
   /* Smooth edges */
   --radius-sm: 8px;
   --radius-md: 14px;
@@ -326,19 +335,102 @@ button:disabled { cursor: default; opacity: .5; }
 .heatmap-legend span:first-child { margin-right: 4px; }
 .heatmap-legend span:last-child { margin-left: 4px; }
 
-/* 30-day bar chart */
-.bar-chart { display: grid; gap: 10px; }
-.bars-row { display: flex; align-items: flex-end; gap: 3px; height: 220px; }
-.bar-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; cursor: pointer; }
-.bar-fill {
+/* 30-day combo chart — stacked token bars (by provider) + a cost line */
+.combo-chart { display: grid; gap: 10px; }
+.plot { position: relative; height: 220px; }
+.bars-row { display: flex; align-items: flex-end; gap: 3px; height: 100%; }
+.bar-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; }
+.bar-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 2px 2px;
+  overflow: hidden;
+}
+.bar-seg {
   width: 100%;
   min-height: 0;
-  background: var(--fill);
-  border-radius: var(--radius-sm) var(--radius-sm) 2px 2px;
+  cursor: pointer;
+  /* Hairline gap in the card color so adjacent providers read as separate parts. */
+  border-top: 1px solid var(--surface);
   transition: opacity 160ms ease;
 }
-.bar-col:hover .bar-fill { opacity: .7; }
+.bar-seg:first-child { border-top: 0; }
+.bar-seg:hover { opacity: .7; }
+.bar-seg.series-0, .swatch.series-0 { background: var(--series-0); }
+.bar-seg.series-1, .swatch.series-1 { background: var(--series-1); }
+.bar-seg.series-2, .swatch.series-2 { background: var(--series-2); }
+.bar-seg.series-3, .swatch.series-3 { background: var(--series-3); }
+.bar-seg.series-4, .swatch.series-4 { background: var(--series-4); }
+.bar-seg.series-5, .swatch.series-5 { background: var(--series-5); }
+
+/* Cost overlay — a connected line with a dot per day, the chart's brightest mark. */
+.cost-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.cost-line polyline {
+  fill: none;
+  stroke: var(--ink-900);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cost-dots { position: absolute; inset: 0; pointer-events: none; }
+.cost-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-900);
+  border: 2px solid var(--surface);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+}
 .bar-axis { display: flex; justify-content: space-between; color: var(--ink-400); font-size: 11px; }
+
+/* Chart legend */
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--ink-500); font-size: 11px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; }
+.swatch.cost-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-900);
+  border: 2px solid var(--surface);
+}
+
+/* Provider page — controls + 100% share bar */
+.card-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.share { display: grid; gap: 14px; }
+.share-bar {
+  display: flex;
+  height: 30px;
+  width: 100%;
+  background: var(--surface-strong);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.share-seg {
+  height: 100%;
+  min-width: 0;
+  cursor: pointer;
+  /* Hairline gap in the card color so adjacent providers read as separate parts. */
+  border-left: 1px solid var(--surface);
+  transition: opacity 160ms ease;
+}
+.share-seg:first-child { border-left: 0; }
+.share-seg:hover { opacity: .7; }
+.share-seg.series-0 { background: var(--series-0); }
+.share-seg.series-1 { background: var(--series-1); }
+.share-seg.series-2 { background: var(--series-2); }
+.share-seg.series-3 { background: var(--series-3); }
+.share-seg.series-4 { background: var(--series-4); }
+.share-seg.series-5 { background: var(--series-5); }
+
+.empty-note { color: var(--ink-500); font-size: 13px; }
 
 /* Tooltip */
 .tooltip {
