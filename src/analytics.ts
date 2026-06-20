@@ -10,13 +10,17 @@ export function formatNumber(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
 }
 
-/** Abbreviate a token count to a single decimal, e.g. 33.2m or 12.3b. */
+/** Abbreviate a token count to a single decimal, e.g. 33.2m, 12b. */
 export function formatTokens(value: number) {
   const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}b`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  if (abs >= 1_000_000_000) return `${trimDecimal(value / 1_000_000_000)}b`;
+  if (abs >= 1_000_000) return `${trimDecimal(value / 1_000_000)}m`;
+  if (abs >= 1_000) return `${trimDecimal(value / 1_000)}k`;
   return formatNumber(value);
+}
+
+function trimDecimal(value: number) {
+  return value.toFixed(1).replace(/\.0$/, "");
 }
 
 export function formatCurrency(value: number) {
