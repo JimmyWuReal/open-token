@@ -16,6 +16,7 @@ const deviceName = os.hostname() || os.platform();
 const args = new Set(process.argv.slice(2));
 const argList = process.argv.slice(2);
 const port = numberArg("--port", 5173);
+const host = "127.0.0.1";
 const shouldOpen = !args.has("--no-open") && !args.has("--collect-only");
 const collectOnly = args.has("--collect-only");
 const noCollect = args.has("--no-collect");
@@ -371,7 +372,7 @@ function startCollection() {
 
 async function startStaticServer() {
   const server = http.createServer(async (request, response) => {
-    const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
+    const url = new URL(request.url || "/", `http://${request.headers.host || host}`);
     if (url.pathname === "/local-data/refresh") {
       response.writeHead(noCollect ? 409 : 202, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
       if (noCollect) {
@@ -401,11 +402,29 @@ async function startStaticServer() {
     await serveFile(response, candidate);
   });
 
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, "127.0.0.1", resolve);
-  });
-  return server;
+  for (let candidatePort = port; candidatePort <= 65535; candidatePort += 1) {
+    try {
+      const actualPort = await new Promise((resolve, reject) => {
+        const onError = (error) => {
+          server.off("listening", onListening);
+          reject(error);
+        };
+        const onListening = () => {
+          server.off("error", onError);
+          const address = server.address();
+          resolve(typeof address === "object" && address ? address.port : candidatePort);
+        };
+        server.once("error", onError);
+        server.once("listening", onListening);
+        server.listen(candidatePort, host);
+      });
+      return { server, port: actualPort };
+    } catch (error) {
+      if (error.code !== "EADDRINUSE" || candidatePort === 65535) throw error;
+    }
+  }
+
+  throw new Error("No available port found.");
 }
 
 async function openBrowser(url) {
@@ -420,8 +439,8 @@ if (collectOnly) {
   process.exit(0);
 }
 
-await startStaticServer();
-const url = `http://127.0.0.1:${port}/`;
+const { port: activePort } = await startStaticServer();
+const url = `http://${host}:${activePort}/`;
 console.log(`Open Token is running at ${url}`);
 if (shouldOpen) await openBrowser(url);
 

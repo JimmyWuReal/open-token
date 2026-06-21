@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { dailyProviderTotals, dailyTotals, formatCurrency, formatNumber, formatTokens, lastDays, lastDaysByProvider, lifetime, longestStreak, providerOrder } from "./analytics";
-import type { DayProviderTotal, DayTotal } from "./analytics";
+import { breakdown, dailyProviderTotals, dailyTotals, formatCurrency, formatNumber, formatTokens, lastDays, lastDaysByProvider, lifetime, longestStreak, providerOrder } from "./analytics";
+import type { DayProviderTotal, DayTotal, GroupStat } from "./analytics";
 import { loadCollectionStatus, loadPayload, requestCollectionRefresh } from "./data";
-import type { CollectionStatus, DataPayload } from "./types";
+import type { CollectionStatus, DataPayload, TokenEvent } from "./types";
 
-const TABS = ["Overview", "Sessions", "Models", "Settings"] as const;
+const TABS = ["Overview", "Days", "Provider", "Model"] as const;
 type Tab = (typeof TABS)[number];
 type HeatMode = "tokens" | "cost";
 type Metric = "tokens" | "cost";
@@ -128,8 +128,12 @@ export default function App() {
           showTip={showTip}
           hideTip={hideTip}
         />
+      ) : tab === "Days" ? (
+        <DaysPage events={events} showTip={showTip} hideTip={hideTip} />
+      ) : tab === "Provider" ? (
+        <BreakdownPage key="provider" events={events} groupKey="provider" title="Providers" subjectLabel="provider" showTip={showTip} hideTip={hideTip} />
       ) : (
-        <Placeholder name={tab} />
+        <BreakdownPage key="model" events={events} groupKey="model" title="Models" subjectLabel="model" showTip={showTip} hideTip={hideTip} />
       )}
 
       {tip ? (
@@ -352,12 +356,172 @@ function DailyChart({ days, providers, metric, showTip, hideTip }: { days: DayPr
   );
 }
 
-function Placeholder({ name }: { name: string }) {
+type TipHandlers = {
+  showTip: (event: { clientX: number; clientY: number }, title: string, detail: string) => void;
+  hideTip: () => void;
+};
+
+function MetricToggle({ metric, onChange }: { metric: Metric; onChange: (metric: Metric) => void }) {
   return (
-    <section className="card placeholder">
-      <h2>{name}</h2>
-      <p>This section is a placeholder. Content coming soon.</p>
-    </section>
+    <div className="segmented" role="group" aria-label="Metric">
+      <button type="button" className={metric === "tokens" ? "seg active" : "seg"} onClick={() => onChange("tokens")}>Tokens</button>
+      <button type="button" className={metric === "cost" ? "seg active" : "seg"} onClick={() => onChange("cost")}>Cost</button>
+    </div>
+  );
+}
+
+function shortDay(date: string) {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function weekday(date: string) {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "long", timeZone: "UTC" });
+}
+
+function topProvider(day: DayProviderTotal, metric: Metric) {
+  const source = metric === "cost" ? day.costByProvider : day.byProvider;
+  let name = "";
+  let best = -1;
+  for (const [provider, value] of Object.entries(source)) {
+    if (value > best) { best = value; name = provider; }
+  }
+  return name || "—";
+}
+
+function DaysPage({ events, showTip, hideTip }: TipHandlers & { events: TokenEvent[] }) {
+  const [metric, setMetric] = useState<Metric>("tokens");
+  const providerTotals = useMemo(() => dailyProviderTotals(events), [events]);
+  const days = useMemo(() => lastDaysByProvider(providerTotals, 30).slice().reverse(), [providerTotals]);
+
+  const valueOf = (day: DayProviderTotal) => (metric === "cost" ? day.cost : day.tokens);
+  const fmt = (value: number) => (metric === "cost" ? formatCurrency(value) : formatTokens(value));
+  const active = days.filter((day) => day.tokens > 0);
+  const max = Math.max(Number.EPSILON, ...days.map(valueOf));
+  const windowTotal = days.reduce((sum, day) => sum + valueOf(day), 0);
+  const average = active.length ? windowTotal / active.length : 0;
+  const busiest = active.reduce<DayProviderTotal | null>((best, day) => (!best || valueOf(day) > valueOf(best) ? day : best), null);
+
+  return (
+    <>
+      <section className="stats" aria-label="Last 30 days summary">
+        <Stat label="Active days" value={`${active.length} / 30`} detail="Days with activity" />
+        <Stat label={metric === "cost" ? "Busiest day spend" : "Busiest day"} value={busiest ? fmt(valueOf(busiest)) : "—"} detail={busiest ? shortDay(busiest.date) : "No activity"} />
+        <Stat label="Daily average" value={fmt(average)} detail="Per active day" />
+      </section>
+
+      <section className="card" aria-label="Daily breakdown">
+        <div className="card-head">
+          <h2>Daily breakdown · last 30 days</h2>
+          <MetricToggle metric={metric} onChange={setMetric} />
+        </div>
+        {active.length ? (
+          <table className="day-table">
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Top provider</th>
+                <th>{metric === "cost" ? "Cost" : "Tokens"}</th>
+                <th className="day-bar-cell" aria-hidden="true" />
+              </tr>
+            </thead>
+            <tbody>
+              {days.map((day) => {
+                const value = valueOf(day);
+                const width = value > 0 ? Math.max(6, (value / max) * 100) : 0;
+                const top = topProvider(day, metric);
+                const detail = `${formatTokens(day.tokens)} tokens · ${formatCurrency(day.cost)} · top ${top}`;
+                return (
+                  <tr
+                    className="day-row"
+                    key={day.date}
+                    onMouseEnter={(event) => showTip(event, fmtDay(day.date), detail)}
+                    onMouseMove={(event) => showTip(event, fmtDay(day.date), detail)}
+                    onMouseLeave={hideTip}
+                  >
+                    <td>
+                      <span className="day-date">
+                        <b>{shortDay(day.date)}</b>
+                        <small>{weekday(day.date)}</small>
+                      </span>
+                    </td>
+                    <td className="day-top">{value > 0 ? top : "—"}</td>
+                    <td><span className="day-val">{value > 0 ? fmt(value) : "—"}</span></td>
+                    <td className="day-bar-cell">
+                      <div className="day-track"><div className="day-fill" style={{ width: `${width}%` }} /></div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="empty-note">No activity recorded in the last 30 days.</p>
+        )}
+      </section>
+    </>
+  );
+}
+
+function BreakdownPage({ events, groupKey, title, subjectLabel, showTip, hideTip }: TipHandlers & { events: TokenEvent[]; groupKey: "provider" | "model"; title: string; subjectLabel: string }) {
+  const [metric, setMetric] = useState<Metric>("tokens");
+  const stats = useMemo(() => breakdown(events, groupKey), [events, groupKey]);
+  const valueOf = (stat: GroupStat) => (metric === "cost" ? stat.cost : stat.tokens);
+  const sorted = useMemo(() => stats.slice().sort((a, b) => (metric === "cost" ? b.cost - a.cost : b.tokens - a.tokens)), [stats, metric]);
+  const fmt = (value: number) => (metric === "cost" ? formatCurrency(value) : formatTokens(value));
+
+  const total = sorted.reduce((sum, stat) => sum + valueOf(stat), 0);
+  const max = Math.max(Number.EPSILON, ...sorted.map(valueOf));
+  const lifetimeTotal = stats.reduce((acc, stat) => ({ tokens: acc.tokens + stat.tokens, cost: acc.cost + stat.cost }), { tokens: 0, cost: 0 });
+  const top = sorted[0];
+
+  return (
+    <>
+      <section className="stats" aria-label={`${title} summary`}>
+        <Stat label={title} value={formatNumber(stats.length)} detail={`Distinct ${subjectLabel}s`} />
+        <Stat label={`Top ${subjectLabel}`} value={top ? top.name : "—"} detail={top ? `${formatTokens(top.tokens)} tokens` : "No activity"} />
+        <Stat label={metric === "cost" ? "Total cost" : "Total tokens"} value={metric === "cost" ? formatCurrency(lifetimeTotal.cost) : formatTokens(lifetimeTotal.tokens)} detail="All recorded sessions" />
+      </section>
+
+      <section className="card" aria-label={`${title} breakdown`}>
+        <div className="card-head">
+          <h2>{title} by {metric === "cost" ? "cost" : "tokens"}</h2>
+          <MetricToggle metric={metric} onChange={setMetric} />
+        </div>
+        {sorted.length ? (
+          <div className="rank-list">
+            {sorted.map((stat, index) => {
+              const value = valueOf(stat);
+              const width = value > 0 ? Math.max(6, (value / max) * 100) : 0;
+              const share = total > 0 ? Math.round((value / total) * 100) : 0;
+              const detail = `${formatTokens(stat.tokens)} tokens · ${formatCurrency(stat.cost)} · ${formatNumber(stat.requests)} requests`;
+              return (
+                <div
+                  className="rank-item"
+                  key={stat.name}
+                  onMouseEnter={(event) => showTip(event, stat.name, detail)}
+                  onMouseMove={(event) => showTip(event, stat.name, detail)}
+                  onMouseLeave={hideTip}
+                >
+                  <div className="rank-head">
+                    <div className="rank-label">
+                      <span className="rank-name"><span className="rank-rank">{index + 1}</span>{stat.name}</span>
+                      {stat.provider ? <span className="rank-sub">{stat.provider}</span> : null}
+                    </div>
+                    <div className="rank-figs">
+                      <span className="rank-value">{fmt(value)}</span>
+                      <span className="rank-share">{share}%</span>
+                    </div>
+                  </div>
+                  <div className="rank-track"><div className="rank-fill" style={{ width: `${width}%` }} /></div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="empty-note">No {subjectLabel} activity recorded.</p>
+        )}
+      </section>
+    </>
   );
 }
 

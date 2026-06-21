@@ -67,6 +67,38 @@ export function group(events: TokenEvent[], key: "provider" | "model" | "tool", 
   return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
 }
 
+export type GroupStat = {
+  name: string;
+  tokens: number;
+  cost: number;
+  requests: number;
+  events: number;
+  /** For models: the provider they were first seen under. */
+  provider?: string;
+};
+
+/** Totals per distinct `provider` or `model`, unsorted. */
+export function breakdown(events: TokenEvent[], key: "provider" | "model"): GroupStat[] {
+  const map = new Map<string, GroupStat>();
+  for (const event of events) {
+    const name = event[key];
+    const current = map.get(name) || {
+      name,
+      tokens: 0,
+      cost: 0,
+      requests: 0,
+      events: 0,
+      provider: key === "model" ? event.provider : undefined
+    };
+    current.tokens += tokens(event);
+    current.cost += event.costUsd;
+    current.requests += event.requestCount;
+    current.events += 1;
+    map.set(name, current);
+  }
+  return Array.from(map.values());
+}
+
 export function timeline(events: TokenEvent[]) {
   const days = new Map<string, { tokens: number; cost: number }>();
   for (const event of events) {

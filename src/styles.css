@@ -394,9 +394,60 @@ button:disabled { cursor: default; opacity: .5; }
 .tooltip strong { font-size: 13px; color: var(--bg); font-variant-numeric: tabular-nums; }
 .tooltip span { font-size: 11px; color: var(--surface-strong); }
 
-/* Placeholder tabs */
-.placeholder { min-height: 240px; display: grid; place-content: center; text-align: center; gap: 8px; }
-.placeholder p { color: var(--ink-500); }
+/* Empty state */
+.empty-note { color: var(--ink-500); font-size: 13px; text-align: center; padding: 28px 0; }
+
+/* Ranking list — Provider / Model breakdown */
+.rank-list { display: grid; }
+.rank-item { display: grid; gap: 11px; padding: 16px 0; border-top: 1px solid var(--line); }
+.rank-item:first-child { border-top: 0; padding-top: 2px; }
+.rank-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.rank-label { display: grid; gap: 3px; min-width: 0; }
+.rank-name {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-900);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rank-rank { color: var(--ink-400); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rank-sub { color: var(--ink-400); font-size: 12px; }
+.rank-figs { display: flex; align-items: baseline; gap: 12px; white-space: nowrap; }
+.rank-value { font-size: 16px; font-weight: 700; color: var(--ink-900); font-variant-numeric: tabular-nums; }
+.rank-share { color: var(--ink-500); font-size: 12px; font-variant-numeric: tabular-nums; }
+.rank-track { height: 10px; overflow: hidden; background: var(--surface-strong); border-radius: var(--radius-pill); }
+.rank-fill { height: 100%; min-width: 8px; background: var(--fill); border-radius: inherit; transition: width 260ms ease; }
+.rank-item:hover .rank-fill { opacity: .82; }
+
+/* Days table */
+.day-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.day-table th {
+  text-align: right;
+  padding: 0 14px 14px;
+  color: var(--ink-400);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.day-table td { text-align: right; padding: 13px 14px; border-top: 1px solid var(--line); }
+.day-table th:first-child, .day-table td:first-child { text-align: left; padding-left: 0; }
+.day-table th:last-child, .day-table td:last-child { padding-right: 0; }
+.day-row { cursor: pointer; transition: background 160ms ease; }
+.day-row:hover td { background: var(--bg); }
+.day-row:hover .day-fill { opacity: .82; }
+.day-date { display: grid; gap: 2px; }
+.day-date b { font-size: 14px; font-weight: 600; color: var(--ink-700); }
+.day-date small { color: var(--ink-400); font-size: 11px; }
+.day-top { color: var(--ink-500); font-size: 13px; }
+.day-val { font-size: 14px; font-weight: 600; color: var(--ink-900); }
+.day-bar-cell { width: 34%; }
+.day-track { height: 8px; overflow: hidden; background: var(--surface-strong); border-radius: var(--radius-pill); }
+.day-fill { height: 100%; min-width: 6px; background: var(--fill); border-radius: inherit; transition: width 260ms ease; }
 
 @media (max-width: 760px) {
   .profile { flex-wrap: wrap; }
