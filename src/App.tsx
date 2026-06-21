@@ -125,6 +125,7 @@ export default function App() {
           streak={streak}
           year={year}
           month={month}
+          providers={providers}
           showTip={showTip}
           hideTip={hideTip}
         />
@@ -152,6 +153,7 @@ function Overview({
   streak,
   year,
   month,
+  providers,
   showTip,
   hideTip
 }: {
