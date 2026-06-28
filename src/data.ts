@@ -62,6 +62,7 @@ export function demoPayload(): DataPayload {
 
   return {
     generatedAt: new Date().toISOString(),
+    currentDeviceName: "Demo device",
     scannedPaths: [],
     totalEvents: events.length,
     events

@@ -80,6 +80,10 @@ export default function App() {
   const year = useMemo(() => lastDays(totals, 365), [totals]);
   const providerTotals = useMemo(() => dailyProviderTotals(events), [events]);
   const month = useMemo(() => lastDaysByProvider(providerTotals, 30), [providerTotals]);
+  const currentDeviceName = payload?.currentDeviceName || events[0]?.deviceName || "";
+  const headerDetail = isLocal
+    ? currentDeviceName ? `This device · ${currentDeviceName}` : "This device"
+    : "Demo dashboard";
 
   const showTip = useCallback((event: { clientX: number; clientY: number }, title: string, detail: string) => {
     setTip({ x: event.clientX, y: event.clientY, title, detail });
@@ -89,9 +93,10 @@ export default function App() {
   return (
     <main className="shell">
       <header className="profile">
-        <div className="avatar" aria-hidden="true">JW</div>
+        <div className="avatar" aria-hidden="true">OT</div>
         <div className="profile-id">
-          <h1>Jordan Walters</h1>
+          <h1>Open Token</h1>
+          <p>{headerDetail}</p>
         </div>
         <div className="profile-actions">
           <label className="toggle-control">

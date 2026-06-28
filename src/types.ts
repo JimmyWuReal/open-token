@@ -18,6 +18,7 @@ export type TokenEvent = {
 
 export type DataPayload = {
   generatedAt: string;
+  currentDeviceName?: string;
   scannedPaths: string[];
   totalEvents: number;
   events: TokenEvent[];
@@ -38,6 +39,7 @@ export type CollectionStatus = {
   updatedAt?: string;
   finishedAt?: string;
   currentSource?: string;
+  currentDeviceName?: string;
   totalEvents?: number;
   error?: string;
 };

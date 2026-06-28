@@ -15,6 +15,24 @@ const deviceName = os.hostname() || os.platform();
 
 const args = new Set(process.argv.slice(2));
 const argList = process.argv.slice(2);
+
+function assertSupportedNode() {
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  const supported = (major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major > 22;
+  if (!supported) {
+    console.error(`Open Token requires Node.js 20.19.0+ or 22.12.0+. Current Node.js: ${process.versions.node}`);
+    console.error("Install a newer Node.js version, then run this command again.");
+    process.exit(1);
+  }
+}
+
+assertSupportedNode();
+
+if (args.has("--check-node")) {
+  console.log(`Node.js ${process.versions.node} is supported.`);
+  process.exit(0);
+}
+
 const port = numberArg("--port", 5173);
 const host = "127.0.0.1";
 const shouldOpen = !args.has("--no-open") && !args.has("--collect-only");
@@ -93,7 +111,7 @@ function normalize(raw) {
     model: model || "Unknown",
     tool: firstString(raw.tool, "Imported"),
     project: firstString(raw.project, projectFromCwd(raw.cwd)),
-    deviceName,
+    deviceName: firstString(raw.deviceName, raw.device, raw.hostname, deviceName),
     inputTokens: parseNumber(raw.inputTokens ?? raw.prompt_tokens ?? raw.promptTokens),
     outputTokens: parseNumber(raw.outputTokens ?? raw.completion_tokens ?? raw.completionTokens),
     cachedTokens: parseNumber(raw.cachedTokens ?? raw.cached_input_tokens),
@@ -300,6 +318,7 @@ async function collect() {
   events.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const payload = {
     generatedAt: new Date().toISOString(),
+    currentDeviceName: deviceName,
     scannedPaths,
     totalEvents: events.length,
     events
@@ -315,6 +334,7 @@ async function collect() {
     eventsCollected: events.length,
     totalEvents: events.length,
     generatedAt: payload.generatedAt,
+    currentDeviceName: deviceName,
     finishedAt: new Date().toISOString(),
     currentSource: ""
   });

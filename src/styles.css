@@ -96,6 +96,13 @@ h2 { font-size: 15px; letter-spacing: 0; color: var(--ink-900); }
 }
 
 .profile-id { min-width: 0; }
+.profile-id p {
+  margin-top: 8px;
+  color: var(--ink-500);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 
 .profile-actions {
   display: flex;

@@ -16,14 +16,17 @@
     "README.md"
   ],
   "scripts": {
+    "check-node": "node ./bin/open-token.mjs --check-node",
     "start": "node ./bin/open-token.mjs",
+    "predev": "npm run check-node",
     "dev": "vite --host 127.0.0.1",
     "collect": "node ./bin/open-token.mjs --collect-only",
+    "prebuild": "npm run check-node",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

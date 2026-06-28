@@ -45,6 +45,7 @@ function localDataPlugin() {
             scannedPaths: payload.scannedPaths || [],
             totalEvents: payload.totalEvents || payload.events?.length || 0,
             generatedAt: payload.generatedAt,
+            currentDeviceName: payload.currentDeviceName,
             updatedAt: new Date().toISOString()
           }));
         } catch {
